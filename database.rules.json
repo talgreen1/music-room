@@ -1,0 +1,30 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "rooms": {
+      "$code": {
+        ".read": "auth != null && $code.matches(/^[0-9]{6}$/) && (!data.exists() || data.child('expiresAt').val() > now)",
+        ".write": "auth != null && $code.matches(/^[0-9]{6}$/) && !data.exists() && newData.child('masterId').val() === auth.uid",
+        ".validate": "newData.hasChildren(['masterId','createdAt','expiresAt','pdfUrl','pdfVersion','pdfTitle','position'])",
+        "masterId": { ".validate": "newData.isString() && ((!data.exists() && newData.val() === auth.uid) || newData.val() === data.val())" },
+        "createdAt": { ".validate": "newData.isNumber() && ((!data.exists() && newData.val() >= now - 60000 && newData.val() <= now + 60000) || newData.val() === data.val())" },
+        "expiresAt": { ".validate": "newData.isNumber() && ((!data.exists() && newData.val() === newData.parent().child('createdAt').val() + 86400000) || newData.val() === data.val())" },
+        "pdfUrl": { ".validate": "newData.isString() && newData.val().length <= 2048 && (!data.exists() || newData.val() === data.val())" },
+        "pdfVersion": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 100 && (!data.exists() || newData.val() === data.val())" },
+        "pdfTitle": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200 && (!data.exists() || newData.val() === data.val())" },
+        "position": {
+          ".write": "auth != null && data.parent().child('masterId').val() === auth.uid && data.parent().child('expiresAt').val() > now && newData.exists()",
+          ".validate": "newData.hasChildren(['page','offset','zoom','sequence','updatedAt'])",
+          "page": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 10000 && newData.val() % 1 === 0" },
+          "offset": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+          "zoom": { ".validate": "newData.isNumber() && newData.val() >= 0.75 && newData.val() <= 2" },
+          "sequence": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && ((!data.exists() && newData.val() === 0) || newData.val() > data.val())" },
+          "updatedAt": { ".validate": "newData.isNumber() && newData.val() >= now - 60000 && newData.val() <= now + 60000" },
+          "$other": { ".validate": false }
+        },
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}
