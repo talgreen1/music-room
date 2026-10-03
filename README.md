@@ -14,6 +14,7 @@ music-room/
 │   ├── model.ts             # Room/position types, validation, and scroll coordinates
 │   ├── sync.ts              # Throttled Master position publisher
 │   ├── gestures.ts          # PDF-only pointer drag, pinch, and trackpad zoom
+│   ├── scrollbar.ts         # Persistent touch/mouse scrollbar and keyboard scrolling
 │   ├── pdf-links.ts         # Internal PDF destination/page coordinate resolution
 │   ├── viewer.ts            # PDF.js loading, rendering, zoom, and smooth following
 │   ├── style.css            # Dark interface and responsive layouts
@@ -97,6 +98,8 @@ Pinch inside the PDF to zoom around your fingers; drag with one finger or the pr
 Tap or click the songbook's embedded internal links to open the referenced PDF page. Link regions scale with document zoom and use the PDF's destination coordinates, including named destinations and page object references. Navigation preserves the current document zoom and aligns to the right edge by default for the RTL songbook. The Master has an **RTL orientation** checkbox, checked by default; uncheck it for left-edge alignment. Changing the checkbox also aligns the current view. The resulting horizontal position and link navigation synchronize through the existing room position updates. Followers must switch to Browse independently to use links; Return to Master restores the shared view. These links navigate inside the loaded PDF rather than opening another browser page.
 
 The Master's RTL checkbox sits in the bottom toolbar alongside page and zoom controls. On narrow phones, swipe the toolbar horizontally to reach additional controls without adding another row over the PDF.
+
+Use the persistent vertical scrollbar beside the PDF to move quickly through the whole songbook: drag its thumb or tap its track. It also supports arrow keys, Page Up/Down, Home, and End when focused. The first toolbar button jumps directly to PDF page 1 while retaining zoom. Both controls synchronize for the Master; Followers can use them after switching to Browse independently.
 
 Dragging and pinching also work when fingers start over links. A single tap opens the link; moving at least 8 CSS pixels starts a drag, and a second finger starts a pinch immediately. Gestures suppress accidental link activation when fingers lift. Keyboard link activation remains available.
 

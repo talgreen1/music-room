@@ -4,10 +4,12 @@ import { RoomService, cloudConfigured, localServerConfigured, songbook, type Con
 import { validCode, type Room } from './model';
 import { SongbookViewer } from './viewer';
 import { PositionPublisher } from './sync';
+import { PdfScrollbar } from './scrollbar';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const service = new RoomService();
 let viewer: SongbookViewer | undefined;
+let scrollbar: PdfScrollbar | undefined;
 let publisher: PositionPublisher | undefined;
 let room: Room | undefined;
 let master = false;
@@ -21,7 +23,7 @@ const $ = <T extends HTMLElement = HTMLElement>(selector: string) => app.querySe
 const safe = (value: string) => value.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
 const message = (value: string) => { const element = app.querySelector<HTMLElement>('#notice'); if (element) { element.textContent = value; element.hidden = !value; } };
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong. Please try again.';
-function cleanup() { generation++; publisher?.stop(); publisher = undefined; viewer?.destroy(); viewer = undefined; service.leave(); room = undefined; ready = false; lastSequence = -1; lastPublished = ''; }
+function cleanup() { generation++; publisher?.stop(); publisher = undefined; scrollbar?.destroy(); scrollbar = undefined; viewer?.destroy(); viewer = undefined; service.leave(); room = undefined; ready = false; lastSequence = -1; lastPublished = ''; }
 
 function home() {
   cleanup();
@@ -52,6 +54,13 @@ async function openRoom(code: string) {
     try { await QRCode.toCanvas($<HTMLCanvasElement>('#qr'), url.href, { width: 220, margin: 2 }); } catch { $('#copy-status').textContent = 'QR unavailable. Use the room link.'; }
     $('#copy').onclick = async () => { try { await navigator.clipboard.writeText(url.href); $('#copy-status').textContent = 'Link copied.'; } catch { $('#copy-status').textContent = 'Copy the link above to share.'; } };
   };
+  const pdfFrame = document.createElement('div'); pdfFrame.className = 'pdf-frame';
+  $('#pdf').before(pdfFrame); pdfFrame.append($('#pdf'));
+  scrollbar = new PdfScrollbar($('#pdf')); pdfFrame.append(scrollbar.element);
+  const firstPage = document.createElement('button');
+  firstPage.id = 'first-page'; firstPage.className = 'icon-button';
+  firstPage.setAttribute('aria-label', 'Jump to page 1'); firstPage.title = 'Jump to page 1';
+  firstPage.textContent = '⇤'; $('.toolbar').prepend(firstPage);
   viewer = new SongbookViewer($('#pdf'));
   viewer.onLinkError = message;
   const orientation = document.createElement('label');
@@ -64,6 +73,7 @@ async function openRoom(code: string) {
   publisher = new PositionPublisher(position => service.publish(position), error => message(errorText(error)));
   viewer.onPage = page => { $<HTMLInputElement>('#page').value = String(page); };
   viewer.onPosition = position => {
+    scrollbar?.refresh();
     $('#zoom').textContent = `${Math.round(position.zoom * 100)}%`;
     if (!master || !ready || connection !== 'Connected') return;
     const key = `${position.page}:${position.offset.toFixed(4)}:${(position.horizontal || 0).toFixed(4)}:${position.zoom}`;
@@ -71,33 +81,36 @@ async function openRoom(code: string) {
   };
   const independent = () => master || !following;
   const jump = (page: number) => { if (independent() && ready && Number.isFinite(page)) { viewer?.jump(page); const p = viewer?.position(); if (master && p) publisher?.push(p, true); } };
+  firstPage.onclick = () => jump(1);
   $('#previous').onclick = () => jump(Number($<HTMLInputElement>('#page').value) - 1);
   $('#next').onclick = () => jump(Number($<HTMLInputElement>('#page').value) + 1);
   $<HTMLFormElement>('#page-form').onsubmit = event => { event.preventDefault(); jump(Number($<HTMLInputElement>('#page').value)); $<HTMLInputElement>('#page').blur(); };
   $('#zoom-out').onclick = () => { if (independent()) viewer?.setZoom((viewer.position()?.zoom || 1) - .1); };
   $('#zoom-in').onclick = () => { if (independent()) viewer?.setZoom((viewer.position()?.zoom || 1) + .1); };
   function updateFollow() {
+    scrollbar?.setEnabled(ready && independent());
     orientation.hidden = !master;
     rtl.disabled = !ready;
     $('#follow').textContent = following ? 'Following Master' : 'Browse independently'; $('#follow').setAttribute('aria-pressed', String(following));
     $('#pdf').classList.toggle('locked', !master && following);
     $<HTMLButtonElement>('#follow').disabled = !ready;
     $<HTMLButtonElement>('#return').disabled = !ready || !room;
-    for (const selector of ['#previous', '#next', '#page', '#zoom-out', '#zoom-in']) ($<HTMLButtonElement | HTMLInputElement>(selector)).disabled = !ready || !independent();
+    for (const selector of ['#first-page', '#previous', '#next', '#page', '#zoom-out', '#zoom-in']) ($<HTMLButtonElement | HTMLInputElement>(selector)).disabled = !ready || !independent();
   }
   $('#follow').onclick = () => { following = !following; if (following && room) viewer?.follow(room.position, true); else viewer?.cancelFollow(); updateFollow(); };
   $('#return').onclick = () => { following = true; if (room) viewer?.follow(room.position, true); updateFollow(); };
   updateFollow();
   const recovery = document.createElement('section');
   recovery.className = 'room-recovery'; recovery.hidden = true;
-  $('#pdf').before(recovery);
+  pdfFrame.before(recovery);
   function unavailable(title: string, explanation: string) {
     if (token !== generation) return;
     ready = false; master = false; viewer?.cancelFollow();
+    scrollbar?.setEnabled(false);
     orientation.hidden = true;
     $('#role').textContent = 'Room unavailable';
     $('#follow-controls').hidden = true;
-    $('#pdf').hidden = true;
+    pdfFrame.hidden = true;
     $('.toolbar').hidden = true;
     $<HTMLButtonElement>('#share').disabled = true;
     message('');
@@ -120,7 +133,7 @@ async function openRoom(code: string) {
     const first = !room; const previous = room?.position; room = next; master = service.isMaster(next);
     $('#role').textContent = master ? 'You are the Master' : 'Follower'; $('#follow-controls').hidden = master;
     if (first) {
-      recovery.hidden = true; $('#pdf').hidden = false; $('.toolbar').hidden = false;
+      recovery.hidden = true; pdfFrame.hidden = false; $('.toolbar').hidden = false;
       $<HTMLButtonElement>('#share').disabled = false;
       try {
         await viewer!.load(next.pdfUrl);
