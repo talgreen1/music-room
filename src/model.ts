@@ -1,7 +1,12 @@
-export interface Position { page: number; offset: number; zoom: number; sequence?: number; updatedAt?: number }
+export interface Position { page: number; offset: number; zoom: number; horizontal?: number; sequence?: number; updatedAt?: number }
 export interface Room { masterId: string; pdfUrl: string; pdfVersion: string; pdfTitle: string; createdAt: number; expiresAt: number; position: Position }
 const finite = (value: number, fallback: number) => Number.isFinite(value) ? value : fallback;
-export const normalizePosition = (p: Position): Position => ({ page: Math.max(1, Math.floor(finite(p.page, 1))), offset: Math.max(0, Math.min(1, finite(p.offset, 0))), zoom: Math.max(0.75, Math.min(2, finite(p.zoom, 1))) });
+export const MIN_ZOOM = 0.75;
+export const MAX_ZOOM = 4;
+export const clampZoom = (zoom: number) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, finite(zoom, 1)));
+export const normalizePosition = (p: Position): Position => ({ page: Math.max(1, Math.floor(finite(p.page, 1))), offset: Math.max(0, Math.min(1, finite(p.offset, 0))), zoom: clampZoom(p.zoom), horizontal: Math.max(0, Math.min(1, finite(p.horizontal ?? 0, 0))) });
+export const horizontalOffset = (scrollLeft: number, scrollWidth: number, viewportWidth: number) => Math.max(0, Math.min(1, scrollLeft / Math.max(1, scrollWidth - viewportWidth)));
+export const horizontalLeft = (position: Position, scrollWidth: number, viewportWidth: number) => normalizePosition(position).horizontal! * Math.max(0, scrollWidth - viewportWidth);
 export function locatePosition(tops: number[], heights: number[], scrollTop: number): Position {
   if (!tops.length) return { page: 1, offset: 0, zoom: 1 };
   let i = 0;

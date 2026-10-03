@@ -30,4 +30,17 @@ describe('shared local development rooms', () => {
     expect(store.create(descriptor).code).toBe('123456'); expect(store.create({ ...descriptor, masterId: 'second' }).code).toBe('654321');
     expect(store.read('123456')?.masterId).toBe('creator');
   });
+  it('streams two-axis positions and validates the expanded zoom range', () => {
+    const store = new LocalRoomStore(); const created = store.create(descriptor);
+    const position = { page: 37, offset: .6, zoom: 3, horizontal: .75 };
+    let latest;
+    store.subscribe(created.code, room => { latest = room?.position; });
+    expect(store.publish(created.code, created.token, position)).toBe('ok');
+    expect(latest).toMatchObject(position);
+    expect(store.read(created.code)?.position).toMatchObject(position);
+    for (const horizontal of [NaN, Infinity, -1, 1.01]) expect(store.publish(created.code, created.token, { ...position, horizontal })).toBe('invalid');
+    expect(store.publish(created.code, created.token, { ...position, zoom: 4.1 })).toBe('invalid');
+    expect(store.publish(created.code, created.token, { page: 1, offset: 0, zoom: 1 })).toBe('ok');
+    expect(store.read(created.code)?.position.horizontal).toBe(0);
+  });
 });

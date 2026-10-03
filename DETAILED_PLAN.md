@@ -223,6 +223,18 @@ Live backend evidence: `node scripts/test-local-server.mjs` passed independent H
   - Acceptance: `npm run dev` provides shared room creation/reads and live position updates; only the private creator token authorizes writes; shared links contain no token; expiry/reset behavior and LAN usage are documented.
   - Evidence: four backend unit tests and the live-server integration script pass. Browser UI across separate localhost/127.0.0.1 origins displayed Master/Follower roles and synchronized to page 37. Physical phone and production Firebase verification remain separate stories.
 
+## PDF pinch and pan addendum
+
+- [ ] **MR-042 - Zoom the PDF with pinch gestures and synchronize two-axis dragging.** As a Master, I can pinch the document and drag horizontally/vertically while Followers see the same shared zoom and reading position.
+  - Acceptance: PDF gestures do not zoom the whole browser; zoom anchors under the fingers; touch/mouse dragging supports both axes; shared state and both backends validate horizontal pan; Followers follow zoom/pan and Return to Master restores both axes. Existing rooms without horizontal state remain readable. Verify Android/iPhone pinch and rotation before accepting the story.
+  - Progress: implemented on `feat/pdf-pinch-and-pan`; PDF zoom range is 75%–400%. Sixteen unit tests pass, including two-pointer pinch/midpoint handling, cancel-to-single-pointer drag, Follower locking, horizontal coordinate conversion, and local backend validation. Local HTTP/SSE integration verifies horizontal pan and zoom in live updates and reconnect snapshots. Separate-origin Chrome views verified 250% zoom, diagonal drag, independent browsing, and Return to Master restoring both axes. A 390-pixel Follower and resize to 800 pixels retained the Master's normalized horizontal position and page 37. User confirmed the phone test passed on 2026-10-03. Updated production rules are deployed; the live two-identity SDK check passed at 300% zoom and horizontal 0.7 while rejecting Follower writes and invalid zoom/pan values. Type-check and deployment build pass. Specific iPhone and physical-device rotation checks remain outstanding, so the full story remains unchecked.
+
+## Mobile PDF rendering follow-up
+
+- [x] **MR-043 - Render the songbook on browsers missing newer JavaScript APIs.** As a musician, I can see PDF content on my phone rather than only white page placeholders.
+  - Acceptance: use matching compatibility viewer/worker bundles, verify actual index/song page rendering, show actionable per-page errors, and confirm the affected phone displays its PDF after refresh.
+  - Evidence: switched to PDF.js compatibility bundles and added Retry page recovery covering asynchronous and synchronous rendering failures. `scripts/test-pdf-compat.mjs` removes newer built-ins before importing PDF.js and renders pages 1/73 with verified ink pixels. LAN browser rendering succeeds; user confirmed the affected phone test passed on 2026-10-03.
+
 ## Future backlog: not part of version 1
 
 - [ ] **F-001 - Add a built-in song index.** As a musician, I can choose a song name to navigate to its page. Acceptance when scoped: versioned mapping agrees with the current PDF, including index-page offsets.

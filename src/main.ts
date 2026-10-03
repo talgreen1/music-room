@@ -58,7 +58,7 @@ async function openRoom(code: string) {
   viewer.onPosition = position => {
     $('#zoom').textContent = `${Math.round(position.zoom * 100)}%`;
     if (!master || !ready || connection !== 'Connected') return;
-    const key = `${position.page}:${position.offset.toFixed(4)}:${position.zoom}`;
+    const key = `${position.page}:${position.offset.toFixed(4)}:${(position.horizontal || 0).toFixed(4)}:${position.zoom}`;
     if (key !== lastPublished) { lastPublished = key; publisher?.push(position); }
   };
   const independent = () => master || !following;

@@ -13,6 +13,7 @@ music-room/
 │   ├── rooms.ts             # Room creation, identity, subscriptions, and position writes
 │   ├── model.ts             # Room/position types, validation, and scroll coordinates
 │   ├── sync.ts              # Throttled Master position publisher
+│   ├── gestures.ts          # PDF-only pointer drag, pinch, and trackpad zoom
 │   ├── viewer.ts            # PDF.js loading, rendering, zoom, and smooth following
 │   ├── style.css            # Dark interface and responsive layouts
 │   └── *.test.ts            # Model, publisher, and local room store tests
@@ -41,7 +42,7 @@ The original supplied PDF remains at the repository root. Its published copy is 
 
 ## Architecture
 
-The frontend is a TypeScript application built with Vite. PDF.js runs in each participant's browser using a separate worker. Firebase Hosting serves the frontend, worker, and PDF; Firebase Authentication supplies invisible anonymous identities; Realtime Database stores the shared room state.
+The frontend is a TypeScript application built with Vite. PDF.js runs in each participant's browser using a separate worker. The viewer and worker use matching PDF.js compatibility (`legacy`) bundles so rendering does not depend on newer built-ins missing from some mobile browsers. Firebase Hosting serves the frontend, worker, and PDF; Firebase Authentication supplies invisible anonymous identities; Realtime Database stores the shared room state.
 
 ```mermaid
 flowchart LR
@@ -77,17 +78,20 @@ The room is stored under `rooms/<code>` with this shape:
     "page": 37,
     "offset": 0.62,
     "zoom": 1.1,
+    "horizontal": 0.7,
     "sequence": 42,
     "updatedAt": 1791000001000
   }
 }
 ```
 
-`page` is the one-based physical PDF page. `offset` is the reading position within that page, normalized from 0 to 1, so different screen widths do not depend on identical pixel coordinates. `zoom` is relative to the viewer's base page width; its supported range is 0.75–2. `sequence` orders updates, and `updatedAt` uses server time for cloud writes.
+`page` is the one-based physical PDF page. `offset` is the reading position within that page, normalized from 0 to 1, so different screen widths do not depend on identical pixel coordinates. `horizontal` is the fraction of available horizontal scroll travel, also from 0 to 1; older room snapshots without it use 0. `zoom` is relative to the viewer's base page width; its supported range is 0.75–4 (75%–400%). `sequence` orders updates, and `updatedAt` uses server time for cloud writes.
 
 The viewer converts Master scrolling into these coordinates. `PositionPublisher` in `src/sync.ts` throttles ordinary scroll updates to approximately 15 per second, allows only one write in flight, and replaces pending updates with the newest position. Page jumps request an immediate update. Followers interpolate toward the latest target using `requestAnimationFrame`; initial joins and large jumps snap to the target. The UI ignores stale sequences and retains the latest room state while the PDF loads.
 
 Followers can turn following off to browse locally. Incoming updates still retain the Master's latest position. **Return to Master** restores that position and resumes following. Follower navigation never publishes shared state.
+
+Pinch inside the PDF to zoom around your fingers; drag with one finger or the primary mouse button to pan horizontally and vertically. Desktop trackpad pinch/Ctrl+wheel also changes document zoom. Gestures are handled within the PDF area, with native touch zoom disabled there; the app does not globally disable browser zoom. Existing canvases scale during a gesture and refresh their resolution after zoom settles. While following, Followers cannot drag or zoom independently; switch to browsing first.
 
 ### PDF rendering and backend modes
 
@@ -145,6 +149,14 @@ node scripts/test-local-server.mjs
 ```
 
 This creates a disposable test room and verifies independent joining, Master-only writes, live position streaming, and the reconnect snapshot.
+
+To check the PDF compatibility bundle against the supplied index and a song page with newer JavaScript APIs initially absent:
+
+```powershell
+node scripts/test-pdf-compat.mjs
+```
+
+This Node rendering check uses PDF.js's optional `@napi-rs/canvas` dependency. Page rendering failures in the app show an error message and **Retry page** button rather than leaving an unexplained blank placeholder.
 
 `build` writes `dist/`. `preview` serves that build (normally port 4173). Rebuild after changes when testing production preview.
 
@@ -257,6 +269,8 @@ node --use-system-ca scripts/test-cloud-rooms.mjs
 
 Verify the changed permissions before publishing any frontend that depends on them. The project currently enables only anonymous authentication through its tracked provider configuration.
 
+The zoom/pan release requires the updated database rules **before** Hosting: the previous rules reject the new `horizontal` field and zoom values above 200%. These rules are deployed; the field is optional so existing room snapshots and older clients remain readable. For future schema changes, deploy rules first, run the cloud smoke test, and then publish Hosting. The smoke test now exercises horizontal pan and 300% zoom. Refresh each participant's browser after deploying a viewer update.
+
 The cloud smoke test uses two distinct anonymous identities. It checks atomic creation/collision handling, active-room reads, live position updates, late snapshots, denied Follower writes/deletion/ownership changes, denied enumeration, immutable PDF metadata, and rejected malformed positions. Expected `permission_denied` warnings demonstrate the restrictions. Each run leaves one test room that becomes unreadable after 24 hours; remove old records through the Firebase console when needed.
 
 The Spark plan has usage limits; monitor Hosting bandwidth and database usage, especially when many new devices download the 12 MB PDF. See [Firebase pricing](https://firebase.google.com/pricing). Physical two-phone testing and extended recovery checks remain outstanding.
@@ -278,9 +292,10 @@ Serve the versioned PDFs and generated PDF.js worker from the same deployment; a
 
 - Create/join by six-digit code; share link and QR.
 - Master scrolls and navigates; Followers initially follow automatically.
+- Pinch the PDF to zoom; drag to pan horizontally and vertically. The Master shares zoom and both scroll axes.
 - Switch off Following Master to scroll, change page, or zoom independently.
 - Return to Master snaps to the newest shared position and resumes following.
 - Page numbers refer to physical PDF pages, not printed songbook numbering.
 - While following, independent vertical gestures/page controls are locked to prevent conflicting movement.
 
-Realtime traffic contains only page, normalized offset, relative zoom, sequence, and timestamp. PDF pages render locally and nearby canvases are retained rather than rendering all pages simultaneously.
+Realtime traffic contains only page, normalized vertical offset, normalized horizontal travel, relative zoom, sequence, and timestamp. PDF pages render locally and nearby canvases are retained rather than rendering all pages simultaneously.

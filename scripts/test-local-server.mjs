@@ -29,14 +29,17 @@ async function event() {
   } finally { clearTimeout(deadline); }
 }
 assert.equal((await event()).room.position.page, 1);
-const update = await fetch(roomUrl, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${created.token}` }, body: JSON.stringify({ page: 37, offset: .62, zoom: 1.1 }) });
+const update = await fetch(roomUrl, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${created.token}` }, body: JSON.stringify({ page: 37, offset: .62, zoom: 3, horizontal: .7 }) });
 assert.equal(update.status, 200);
 const received = await event(); assert.equal(received.room.position.page, 37); assert.equal(received.room.position.offset, .62); assert.equal(received.room.position.sequence, 1);
+assert.equal(received.room.position.horizontal, .7); assert.equal(received.room.position.zoom, 3);
 controller.abort(); await reader.cancel().catch(() => {});
 const reconnectController = new AbortController();
 const reconnected = await fetch(`${roomUrl}/events`, { signal: reconnectController.signal });
 const reconnectReader = reconnected.body.getReader();
 const reconnectChunk = await reconnectReader.read();
 assert.match(decoder.decode(reconnectChunk.value), /"page":37/);
+const snapshot = await (await fetch(roomUrl)).json();
+assert.equal(snapshot.room.position.horizontal, .7); assert.equal(snapshot.room.position.zoom, 3);
 reconnectController.abort(); await reconnectReader.cancel().catch(() => {});
 console.log('Local server integration passed: independent join, private Master token, denied follower write, live position stream, reconnect snapshot.');

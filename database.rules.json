@@ -18,7 +18,8 @@
           ".validate": "newData.hasChildren(['page','offset','zoom','sequence','updatedAt'])",
           "page": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 10000 && newData.val() % 1 === 0" },
           "offset": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
-          "zoom": { ".validate": "newData.isNumber() && newData.val() >= 0.75 && newData.val() <= 2" },
+          "zoom": { ".validate": "newData.isNumber() && newData.val() >= 0.75 && newData.val() <= 4" },
+          "horizontal": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
           "sequence": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && ((!data.exists() && newData.val() === 0) || newData.val() > data.val())" },
           "updatedAt": { ".validate": "newData.isNumber() && newData.val() >= now - 60000 && newData.val() <= now + 60000" },
           "$other": { ".validate": false }

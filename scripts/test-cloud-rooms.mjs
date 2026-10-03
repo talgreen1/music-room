@@ -50,7 +50,7 @@ try {
   const denied = async (label, write) => {
     await assert.rejects(write, error => /permission.denied/i.test(String(error)), label);
   };
-  const position = { page: 37, offset: 0.62, zoom: 1.1, sequence: 1, updatedAt: serverTimestamp() };
+  const position = { page: 37, offset: 0.62, zoom: 3, horizontal: 0.7, sequence: 1, updatedAt: serverTimestamp() };
   await denied('Follower position writes', () => set(ref(follower, `${path}/position`), position));
   await denied('Follower ownership changes', () => set(ref(follower, `${path}/masterId`), users[1].uid));
   await denied('Follower deletion', () => set(ref(follower, path), null));
@@ -58,6 +58,8 @@ try {
   await denied('Root reads', () => get(ref(follower)));
   await denied('Master PDF changes', () => set(ref(master, `${path}/pdfUrl`), '/other.pdf'));
   await denied('Invalid ranges', () => set(ref(master, `${path}/position`), { ...position, offset: 2 }));
+  await denied('Invalid horizontal pan', () => set(ref(master, `${path}/position`), { ...position, horizontal: 2 }));
+  await denied('Invalid zoom', () => set(ref(master, `${path}/position`), { ...position, zoom: 4.1 }));
   await denied('Extra fields', () => set(ref(master, `${path}/position`), { ...position, surprise: true }));
   await denied('Invalid timestamps', () => set(ref(master, `${path}/position`), { ...position, updatedAt: 0 }));
   const received = new Promise((resolve, reject) => {
@@ -69,6 +71,8 @@ try {
   const latest = await received;
   assert.equal(latest.page, 37);
   assert.equal(latest.offset, 0.62);
+  assert.equal(latest.horizontal, 0.7);
+  assert.equal(latest.zoom, 3);
   assert.equal((await get(ref(follower, `${path}/position`))).val().sequence, 1);
   await denied('Stale sequences', () => set(ref(master, `${path}/position`), position));
   console.log(`PASS: distinct anonymous identities, atomic creation/collision, follower reads, live updates, late snapshot, ownership and schema restrictions. Test room: ${code}`);
