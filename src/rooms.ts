@@ -38,7 +38,9 @@ export class RoomService {
       }
       const credential = await signInAnonymously(auth);
       this.uid = credential.user.uid;
-      this.serverOffset = (await get(ref(this.db, '.info/serverTimeOffset'))).val() || 0;
+      this.serverOffset = await new Promise<number>((resolve, reject) => {
+        onValue(ref(this.db!, '.info/serverTimeOffset'), snapshot => resolve(snapshot.val() || 0), reject, { onlyOnce: true });
+      });
     } else {
       this.uid = sessionStorage.getItem('music-device') || Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
       sessionStorage.setItem('music-device', this.uid);

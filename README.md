@@ -2,7 +2,109 @@
 
 A mobile browser songbook: one Master controls the reading position and Followers follow or browse independently. The supplied 145-page PDF is included as a versioned static asset.
 
-This is the initial implementation. Local development now has a shared server backend for separate browsers and devices. Real Firebase authorization/reconnection and physical Android/iPhone testing still have acceptance work outstanding in [DETAILED_PLAN.md](DETAILED_PLAN.md). Architecture is in [HIGH_LEVEL_DESIGN.md](HIGH_LEVEL_DESIGN.md).
+Live app: **https://talgreen-music-room.web.app**. Create a room there and share its link/code with another browser or phone; joining makes that participant a Follower. Local development also has a shared server backend for separate browsers and devices. Cloud authorization and live SDK updates have been verified; physical Android/iPhone and network-loss testing remain outstanding in [DETAILED_PLAN.md](DETAILED_PLAN.md). Architecture is in [HIGH_LEVEL_DESIGN.md](HIGH_LEVEL_DESIGN.md).
+
+## Project structure
+
+```text
+music-room/
+├── src/
+│   ├── main.ts              # Screens, routing, controls, and session coordination
+│   ├── rooms.ts             # Room creation, identity, subscriptions, and position writes
+│   ├── model.ts             # Room/position types, validation, and scroll coordinates
+│   ├── sync.ts              # Throttled Master position publisher
+│   ├── viewer.ts            # PDF.js loading, rendering, zoom, and smooth following
+│   ├── style.css            # Dark interface and responsive layouts
+│   └── *.test.ts            # Model, publisher, and local room store tests
+├── server/
+│   └── local-rooms.ts       # Vite development middleware: room API and SSE streams
+├── scripts/
+│   ├── test-local-server.mjs # Integration check against a running development server
+│   └── test-cloud-rooms.mjs  # Integration check with distinct Firebase identities
+├── public/songbooks/        # Versioned PDFs copied into each build
+├── index.html               # Browser entry point
+├── vite.config.ts           # Development server and deployment configuration guard
+├── tsconfig.json            # TypeScript compiler settings
+├── package.json             # Dependencies and development/build/test commands
+├── package-lock.json        # Locked dependency versions for npm ci
+├── firebase.json            # Hosting, anonymous auth, database rules, and emulators
+├── database.rules.json      # Server-enforced room permissions and schema validation
+├── .firebaserc              # Default Firebase project
+├── .env.example             # Example local-development settings
+├── .env.deployment.example  # Example settings for a cloud deployment
+├── HIGH_LEVEL_DESIGN.md     # Detailed architectural decisions and future boundaries
+├── DETAILED_PLAN.md         # Stories, acceptance criteria, and progress checkboxes
+└── README.md                # Setup, architecture, and operations guide
+```
+
+The original supplied PDF remains at the repository root. Its published copy is `public/songbooks/songbook-2026-10.pdf`. `dist/` is generated build output; `node_modules/` contains installed dependencies. Both directories, local environment files, and debug artifacts are ignored by Git.
+
+## Architecture
+
+The frontend is a TypeScript application built with Vite. PDF.js runs in each participant's browser using a separate worker. Firebase Hosting serves the frontend, worker, and PDF; Firebase Authentication supplies invisible anonymous identities; Realtime Database stores the shared room state.
+
+```mermaid
+flowchart LR
+    Hosting[Firebase Hosting: app, worker, PDF] --> Master[Master browser]
+    Hosting --> Follower[Follower browser]
+    Master --> Auth[Anonymous Authentication]
+    Follower --> Auth
+    Master -->|Small position updates| Database[Realtime Database]
+    Database -->|Live room subscription| Follower
+```
+
+### Room lifecycle and ownership
+
+Creating a room reserves a six-digit code with a Firebase transaction. The room records its creator's UID, creation time, 24-hour expiry, songbook descriptor, and initial position. Joining subscribes to that specific room and loads its pinned PDF. The URL contains only the room code, for example `/?room=123456`.
+
+`RoomService` in `src/rooms.ts` handles the backend operations. The Master UI requires both the creator's authenticated UID and a creator flag in the tab's session storage. Database rules independently enforce that only the creator may write positions. Followers can read active rooms but cannot change ownership, the PDF descriptor, or the room lifetime. Root and room-list reads are denied.
+
+Closing the Master tab leaves the last shared position in the room; there is no automatic takeover. Losing the creator's identity/session requires creating another room. Expired Firebase records become inaccessible to participants but remain stored until a maintainer removes them.
+
+### Position synchronization
+
+The room is stored under `rooms/<code>` with this shape:
+
+```json
+{
+  "masterId": "anonymous-firebase-uid",
+  "createdAt": 1791000000000,
+  "expiresAt": 1791086400000,
+  "pdfUrl": "/songbooks/songbook-2026-10.pdf",
+  "pdfVersion": "2026-10",
+  "pdfTitle": "Songbook",
+  "position": {
+    "page": 37,
+    "offset": 0.62,
+    "zoom": 1.1,
+    "sequence": 42,
+    "updatedAt": 1791000001000
+  }
+}
+```
+
+`page` is the one-based physical PDF page. `offset` is the reading position within that page, normalized from 0 to 1, so different screen widths do not depend on identical pixel coordinates. `zoom` is relative to the viewer's base page width; its supported range is 0.75–2. `sequence` orders updates, and `updatedAt` uses server time for cloud writes.
+
+The viewer converts Master scrolling into these coordinates. `PositionPublisher` in `src/sync.ts` throttles ordinary scroll updates to approximately 15 per second, allows only one write in flight, and replaces pending updates with the newest position. Page jumps request an immediate update. Followers interpolate toward the latest target using `requestAnimationFrame`; initial joins and large jumps snap to the target. The UI ignores stale sequences and retains the latest room state while the PDF loads.
+
+Followers can turn following off to browse locally. Incoming updates still retain the Master's latest position. **Return to Master** restores that position and resumes following. Follower navigation never publishes shared state.
+
+### PDF rendering and backend modes
+
+Each browser downloads the PDF independently. The viewer creates page geometry for navigation, renders canvases near the viewport, and removes canvases that move away. Room traffic contains reading coordinates; it never contains page images or streamed screen content. Each room pins its PDF version so publishing a replacement does not change the book mid-session.
+
+The app selects its backend from the build mode and environment settings:
+
+| Mode | Backend | Scope |
+| --- | --- | --- |
+| `npm run dev`, no Firebase settings | Vite API with Server-Sent Events | Separate browsers and devices reaching the same development server |
+| Complete Firebase settings | Anonymous auth and Realtime Database | Separate browsers/devices over the internet |
+| Firebase emulator mode | Local auth/database emulators | Development clients reaching the emulator services |
+| Ordinary build without Firebase | Local storage and BroadcastChannel | Tabs in the same browser profile and origin |
+
+The development API lives in `server/local-rooms.ts`. It creates in-memory rooms, supplies a private write token only to the creator, accepts authenticated Master updates, and streams public room snapshots to Followers. It is mounted only by Vite's development server. Static hosting and `npm run preview` do not run this API.
+
+The dedicated `build:deploy` command requires complete cloud Firebase settings and rejects emulator mode. Firebase Hosting runs it automatically before every upload.
 
 ## Run locally for debugging
 
@@ -45,6 +147,8 @@ node scripts/test-local-server.mjs
 This creates a disposable test room and verifies independent joining, Master-only writes, live position streaming, and the reconnect snapshot.
 
 `build` writes `dist/`. `preview` serves that build (normally port 4173). Rebuild after changes when testing production preview.
+
+To preview the actual cloud configuration, use `npm.cmd run build:deploy` followed by `npm.cmd run preview`. The ordinary `build` command does not load `.env.deployment.local`.
 
 ## Connect real Firebase
 
@@ -96,11 +200,79 @@ Defaults work without PDF environment settings. To publish a replacement:
 
 Every room pins its URL/version/title at creation. Active rooms keep the same book even when a newer version is published. External PDF hosts must allow CORS. Search has not been exposed in the initial UI: much of the supplied book appears to have limited extractable song text, and Hebrew search requires further verification.
 
-## Static hosting
+## Deployment
 
-Cloudflare Pages settings: build command `npm run build`, output directory `dist`, Node 24, and your frontend environment variables. Serve the versioned PDF files and generated PDF.js worker from the same deployment. Do not enable emulator mode there.
+The initial deployment uses **Firebase Hosting**, anonymous Authentication, and Realtime Database in `europe-west1`, in the dedicated project `talgreen-music-room`. No billing upgrade was made. Manage usage at https://console.firebase.google.com/project/talgreen-music-room/overview. The PDF is served by Hosting, not Cloud Storage.
 
-This repository contains no deployed cloud resources or paid infrastructure. Verify current free-tier limits and usage before sharing broadly. A production release still requires two-phone testing and database-rule verification.
+### First-time setup on a machine
+
+Install Node.js and the Firebase CLI, then sign in to an account that has access to `talgreen-music-room`:
+
+```powershell
+npm.cmd install --global firebase-tools
+firebase.cmd login
+firebase.cmd login:list
+npm.cmd ci
+Copy-Item .env.deployment.example .env.deployment.local
+```
+
+Skip copying the example if `.env.deployment.local` already exists, to preserve its configured values. Add the public web API key from **Firebase console > Project settings > Your apps > Music Room Web**. The configured production machine already has this ignored local file.
+
+| Setting | Purpose |
+| --- | --- |
+| `VITE_FIREBASE_API_KEY` | Public client API key from the registered web app |
+| `VITE_FIREBASE_AUTH_DOMAIN` | `talgreen-music-room.firebaseapp.com` |
+| `VITE_FIREBASE_DATABASE_URL` | Full European Realtime Database URL from the example file |
+| `VITE_FIREBASE_PROJECT_ID` | `talgreen-music-room` |
+| `VITE_USE_FIREBASE_EMULATORS` | Must be `false` for deployment |
+| `VITE_PDF_URL`, `VITE_PDF_VERSION`, `VITE_PDF_TITLE` | Optional songbook overrides |
+
+Vite embeds `VITE_*` values into the browser bundle at build time; changing these settings requires rebuilding. Keep passwords, service-account keys, and CLI login tokens out of these files. The Firebase CLI uses its own saved sign-in session to administer and deploy the project; browser participants use anonymous authentication. `firebase.cmd logout` removes the CLI's saved access.
+
+Deployment settings do not change `npm run dev`, which continues to use the local shared server unless `.env.local` configures Firebase. On this computer, if Firebase needs the Windows trust store, set `$env:NODE_OPTIONS='--use-system-ca'` before running its commands.
+
+### Publish a frontend update
+
+From the repository root:
+
+```powershell
+npm.cmd run check
+npm.cmd run test
+node --use-system-ca scripts/test-cloud-rooms.mjs
+firebase.cmd deploy --only hosting --project talgreen-music-room
+```
+
+Hosting automatically runs `build:deploy` before uploading `dist/`. This build refuses incomplete Firebase configuration and emulator mode, so it cannot silently publish the browser-only demo. `firebase.json` configures direct-link rewrites, immutable caching for generated assets, one-day PDF caching, and HTML revalidation. On systems without the `.cmd` wrappers, use `npm` and `firebase`.
+
+After deployment, open the live site, create a fresh room, and join from a separate browser or phone. Check the PDF, connected status, scrolling/page jumps, independent browsing, and Return to Master. Local development room codes belong to the local server; create a new room on the deployed site for internet use.
+
+### Publish database rules or authentication changes
+
+For intentional changes to `database.rules.json` or the auth provider configuration in `firebase.json`:
+
+```powershell
+firebase.cmd deploy --only auth,database --project talgreen-music-room
+node --use-system-ca scripts/test-cloud-rooms.mjs
+```
+
+Verify the changed permissions before publishing any frontend that depends on them. The project currently enables only anonymous authentication through its tracked provider configuration.
+
+The cloud smoke test uses two distinct anonymous identities. It checks atomic creation/collision handling, active-room reads, live position updates, late snapshots, denied Follower writes/deletion/ownership changes, denied enumeration, immutable PDF metadata, and rejected malformed positions. Expected `permission_denied` warnings demonstrate the restrictions. Each run leaves one test room that becomes unreadable after 24 hours; remove old records through the Firebase console when needed.
+
+The Spark plan has usage limits; monitor Hosting bandwidth and database usage, especially when many new devices download the 12 MB PDF. See [Firebase pricing](https://firebase.google.com/pricing). Physical two-phone testing and extended recovery checks remain outstanding.
+
+### Alternative: Cloudflare Pages
+
+Cloudflare Pages can host the same frontend while Firebase continues to provide room synchronization:
+
+| Pages setting | Value |
+| --- | --- |
+| Build command | `npm run build:deploy` |
+| Output directory | `dist` |
+| Node version | 24 |
+| Environment variables | The same cloud Firebase and optional PDF settings listed above |
+
+Serve the versioned PDFs and generated PDF.js worker from the same deployment; add the chosen host to Firebase authorized domains if needed. The Vite development API is not included in Pages. No Cloudflare resources were created for the initial deployment.
 
 ## Current controls
 

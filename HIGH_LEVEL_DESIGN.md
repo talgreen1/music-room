@@ -20,7 +20,7 @@ Version 1 includes:
 - Follow Master on/off and Return to Master.
 - Vertical scrolling, page navigation, page jump, zoom, and text search where the PDF supports it.
 - Share link/QR code, mobile viewing, connection status, and reconnect behavior.
-- Configuration and deployment instructions for Cloudflare Pages and Firebase Realtime Database.
+- Configuration and deployment instructions for static hosting and Firebase Realtime Database. Initial deployment uses Firebase Hosting with the existing CLI account; Cloudflare Pages remains an alternative.
 
 Version 1 does not include accounts, Master handover, PDF upload per session, external chord sites, screen sharing, favorites, a custom song index, or transposition. No audio or video is transmitted.
 
@@ -42,7 +42,7 @@ Same-origin hosting is the default. An external host must permit browser access 
 flowchart LR
     M[Master phone: browser + PDF.js] -->|Small position writes| R[Firebase Realtime Database]
     R -->|Position subscription| F[Follower phones: browser + PDF.js]
-    H[Cloudflare Pages: frontend + versioned PDF] -->|App and PDF download| M
+    H[Static hosting: frontend + versioned PDF] -->|App and PDF download| M
     H -->|App and PDF download| F
     A[Firebase anonymous authentication] -->|Invisible device identity| M
     A -->|Invisible device identity| F

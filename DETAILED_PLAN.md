@@ -1,6 +1,6 @@
 # Music Room: detailed implementation plan
 
-Updated: 2026-10-02. Architecture: [HIGH_LEVEL_DESIGN.md](HIGH_LEVEL_DESIGN.md).
+Updated: 2026-10-03. Architecture: [HIGH_LEVEL_DESIGN.md](HIGH_LEVEL_DESIGN.md).
 
 ## Tracking rules
 
@@ -8,7 +8,7 @@ Each story has a stable ID and a checkbox. Check a story only when its acceptanc
 
 Statuses: unchecked = not accepted; checked = accepted. Use a `Progress:` note for partial work or blockers. Future stories remain unchecked until explicitly brought into scope.
 
-Current state: runnable TypeScript/Vite app with a local browser-tab demo, versioned supplied PDF, Firebase adapter, draft database rules, emulator configuration, and local-debugging README. Type-check/build and six automated tests pass. Chrome tabs have verified creation, joining, page following, independent browsing, Return to Master, and aligned page-relative scrolling. Cloud resources have not been configured/deployed; rules/emulator recovery and Android/iPhone checks remain outstanding. Only stories whose full criteria are satisfied are checked below.
+Current state: deployed at https://talgreen-music-room.web.app using Firebase Hosting, anonymous Authentication, and Realtime Database in Europe. Ten automated tests, type-checking, and the deployment build pass. Live Firebase SDK clients with distinct UIDs verified atomic creation/collisions, follower reads, live updates, denied unauthorized writes, and schema restrictions. Chrome on separate hosting origins verified Master creation, Follower joining, the supplied PDF, and synchronized page 37. Extended recovery, full rules edge-case coverage, emulator tests, and physical Android/iPhone checks remain outstanding. Only stories whose full criteria are satisfied are checked below.
 
 Local development update: shared in-memory backend added to Vite so separate browsers and LAN devices can join without Firebase. Position reads use Server-Sent Events; a private creator token protects writes. Rooms reset on server restart. Ten automated tests now include backend collision, authorization, shared-state, subscription cleanup, and expiry checks. Firebase release gates remain separate.
 
@@ -39,10 +39,10 @@ Live backend evidence: `node scripts/test-local-server.mjs` passed independent H
   - Preserve the root original. Avoid a hardcoded demonstration file that is absent from the repository.
   - Evidence: `public/songbooks/songbook-2026-10.pdf` loads in PDF.js through Vite, with title/version environment overrides and a pinned room descriptor. Root original preserved.
 
-- [ ] **MR-006 - Configure Firebase development services.** As a developer, I can test room synchronization safely before release.
+- [x] **MR-006 - Configure Firebase development services.** As a developer, I can test room synchronization safely before release.
   - Acceptance: enable anonymous authentication and Realtime Database, document local/emulator settings, and provide example configuration without secrets.
   - Configuration errors produce a clear setup message. A local demo, if included, is explicitly labeled and never mistaken for cross-device operation.
-  - Progress: `.env.example`, emulator connection support, `firebase.json`, draft rules, and README added. Firebase CLI exists; Java was not found, so emulator integration has not been run. No cloud project settings supplied.
+  - Evidence: dedicated `talgreen-music-room` project configured with anonymous authentication and European Realtime Database; deployment and local example settings, guarded production build, and setup instructions included. Live SDK smoke test passed. Java/emulator execution remains unverified; cloud verification used distinct anonymous clients instead.
 
 **Gate:** runnable project, verified source PDF, documented backend configuration. Dependencies: MR-003 through MR-006 before evaluating the core flow.
 
@@ -89,6 +89,7 @@ Live backend evidence: `node scripts/test-local-server.mjs` passed independent H
   - Deny root/list reads and invalid schemas; reject expired-room access and invalid timestamps/ranges/extra fields.
   - Prove permissions using emulator clients with distinct UIDs, including a direct follower SDK write attempt.
   - Progress: `database.rules.json` implements ownership/schema/lifetime checks. Rules are draft until emulator authorization tests pass.
+  - Cloud progress: Firebase accepted and deployed the rules. `scripts/test-cloud-rooms.mjs` passed direct SDK checks with distinct UIDs: Master-only position writes; denied Follower ownership changes/deletion; denied enumeration/root reads; immutable PDF; invalid ranges/timestamps/extra fields/stale sequence rejection. Emulator coverage, expired-room access, and remaining metadata/schema cases are still pending, so this story remains unchecked.
 
 - [ ] **MR-016 - Demonstrate the core flow on two phones.** As a musician, I can rely on the basic shared songbook experience.
   - Acceptance: Android Chrome and iPhone Safari create/join through Firebase, open the supplied book, and follow continuous scroll plus distant page jumps.
@@ -191,13 +192,15 @@ Live backend evidence: `node scripts/test-local-server.mjs` passed independent H
 
 ## Stage 5: deployment and handoff
 
-- [ ] **MR-036 - Deploy the static frontend.** As a group organizer, I can share an HTTPS URL that works on phones.
-  - Acceptance: Cloudflare Pages build produces and serves `dist`; configure environment settings; PDF/worker URLs and direct room links work.
+- [x] **MR-036 - Deploy the static frontend.** As a group organizer, I can share an HTTPS URL that works on phones.
+  - Acceptance: chosen static host builds and serves `dist`; configure environment settings; PDF/worker URLs and direct room links work.
   - First prepare a reviewable build and deployment configuration. Publish when deployment is authorized; do not infer cloud/account access from local coding work.
+  - Evidence: user requested deployment; Firebase Hosting selected for initial deployment using existing CLI access. HTTPS app and PDF are live at https://talgreen-music-room.web.app. Production browser created room 339077; separate firebaseapp.com origin joined as Follower and followed page 37 with no captured errors. Hosting predeploy rebuilds and refuses incomplete cloud settings/emulator mode. Cloudflare remains a documented alternative; no Cloudflare deployment was performed.
 
-- [ ] **MR-037 - Apply and verify production Firebase configuration.** As an organizer, I can use shared rooms securely outside development.
+- [x] **MR-037 - Apply and verify production Firebase configuration.** As an organizer, I can use shared rooms securely outside development.
   - Acceptance: correct database region/URL, anonymous auth settings, required domain configuration, and deployed tested rules; no public-write test rules.
   - Run a production two-identity smoke test after deployment, with authorization for external changes.
+  - Evidence: anonymous auth enabled via CLI; default RTDB created in `europe-west1`; ownership/schema rules deployed. Both Firebase Hosting origins work with distinct browser storage. Live two-identity SDK smoke test passed after configuration and again after frontend deployment. No billing upgrade or unrestricted write rules were used.
 
 - [ ] **MR-038 - Document setup and monthly PDF replacement.** As a maintainer, I can run and update the app without reading all its code.
   - Acceptance: README covers install/run/check/build, Firebase setup, rules, deployment, demo limitations, and troubleshooting.
