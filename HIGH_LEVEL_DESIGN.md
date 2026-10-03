@@ -84,6 +84,7 @@ Proposed database structure:
         "page": 37,
         "offset": 0.62,
         "zoom": 1.1,
+        "horizontal": 0.7,
         "sequence": 142,
         "updatedAt": 1790899260000
       }
@@ -106,7 +107,7 @@ Share a one-based physical PDF page number and a normalized vertical offset with
 
 Followers reconstruct the anchor using their own page geometry. Equal anchors do not imply identical amounts of visible content on different screen sizes. At the end of the document, clamp to the last reachable scroll position. Handle page gaps and mixed page sizes consistently.
 
-Zoom means a multiplier relative to each device's fit-to-width scale, not a fixed pixel size. Vertical position synchronization is mandatory; horizontal pan is local in version 1. Validate readability and landscape behavior before finalizing zoom synchronization.
+Zoom means a multiplier relative to each device's base page width, not a fixed pixel size. PDF-specific pointer gestures support 75%–400% zoom, anchored under the fingers, and two-axis dragging. Synchronize horizontal travel as a normalized fraction of the device's available scroll range alongside the page-relative vertical offset. Older room state without this field defaults to the left edge. Followers apply shared zoom and both axes; different screen sizes can still show different amounts of content.
 
 ### Publish and receive
 

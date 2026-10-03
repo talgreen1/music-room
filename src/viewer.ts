@@ -1,6 +1,9 @@
-import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy, type RenderTask, type PDFDocumentLoadingTask } from 'pdfjs-dist';
-import worker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { locatePosition, positionTop, type Position } from './model';
+// Use the matching compatibility bundles in both realms: page rendering uses
+// newer APIs (e.g. Promise.try) that some phone browsers have not implemented.
+import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy, type RenderTask, type PDFDocumentLoadingTask } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import worker from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
+import { clampZoom, horizontalOffset, horizontalLeft, locatePosition, positionTop, type Position } from './model';
+import { PdfGestures, type Point } from './gestures';
 GlobalWorkerOptions.workerSrc = worker;
 export class SongbookViewer {
   private pdf?: PDFDocumentProxy;
@@ -13,15 +16,32 @@ export class SongbookViewer {
   private visible = new Set<number>();
   private zoom = 1;
   private frame = 0;
-  private target?: number;
+  private target?: { top: number; left: number };
+  private sharedPosition?: Position;
+  private renderTimer?: ReturnType<typeof setTimeout>;
+  private gestures: PdfGestures;
+  private events = new AbortController();
   private generation = 0;
   private resizeObserver: ResizeObserver;
   onPosition?: (position: Position) => void;
   onPage?: (page: number) => void;
   constructor(private host: HTMLElement) {
-    host.addEventListener('scroll', () => { const position = this.position(); if (position) { this.onPage?.(position.page); this.onPosition?.(position); } }, { passive: true });
-    host.addEventListener('touchstart', () => { if (!this.target) cancelAnimationFrame(this.frame); }, { passive: true });
-    this.resizeObserver = new ResizeObserver(() => { if (this.pdf) { const position = this.position(); this.layout(); if (position) this.follow(position, true); } });
+    host.addEventListener('scroll', () => this.emitPosition(), { passive: true, signal: this.events.signal });
+    this.gestures = new PdfGestures(host, {
+      locked: () => host.classList.contains('locked') || !this.pdf,
+      start: () => this.cancelFollow(),
+      end: () => this.emitPosition(),
+      pan: (dx, dy) => { host.scrollLeft += dx; host.scrollTop += dy; this.emitPosition(); },
+      zoom: (factor, from, to) => this.zoomAt(this.zoom * factor, from, to)
+    });
+    this.resizeObserver = new ResizeObserver(() => {
+      if (this.pdf) {
+        // A following viewer must retain the Master's coordinates through resize,
+        // rather than reinterpret old scroll pixels using its new viewport width.
+        const position = host.classList.contains('locked') ? this.sharedPosition || this.position() : this.position();
+        this.layout(); if (position) this.follow(position, true);
+      }
+    });
     this.resizeObserver.observe(host);
   }
   get count() { return this.pdf?.numPages || 0; }
@@ -52,54 +72,97 @@ export class SongbookViewer {
   private layout() {
     this.generation++; this.tasks.forEach(task => task.cancel()); this.tasks.clear();
     const width = Math.max(200, Math.min(this.host.clientWidth - 24, 1000)) * this.zoom;
-    this.pages.forEach((page, index) => { page.style.width = `${width}px`; page.style.height = `${width * this.ratios[index]}px`; page.querySelector('canvas')?.remove(); });
-    this.visible.forEach(index => void this.render(index));
+    // Scale existing canvases during gestures, then refresh their resolution after
+    // zoom settles. Re-rendering on every pointer move causes flicker and backlog.
+    this.pages.forEach((page, index) => { page.style.width = `${width}px`; page.style.height = `${width * this.ratios[index]}px`; });
+    clearTimeout(this.renderTimer);
+    this.renderTimer = setTimeout(() => {
+      this.generation++; this.tasks.forEach(task => task.cancel()); this.tasks.clear();
+      this.pages.forEach(page => page.querySelector('canvas')?.remove());
+      this.visible.forEach(index => void this.render(index));
+    }, 120);
   }
   private async render(index: number) {
     const generation = this.generation;
     const element = this.pages[index];
     if (!this.pdf || this.tasks.has(index) || element.querySelector('canvas')) return;
-    const page = await this.pdf.getPage(index + 1);
-    if (generation !== this.generation || !this.visible.has(index) || this.tasks.has(index) || element.querySelector('canvas')) return;
-    const viewport = page.getViewport({ scale: element.clientWidth / page.getViewport({ scale: 1 }).width });
-    const ratio = Math.min(devicePixelRatio || 1, 2, Math.sqrt(4000000 / (viewport.width * viewport.height)));
-    const canvas = document.createElement('canvas'); canvas.width = Math.floor(viewport.width * ratio); canvas.height = Math.floor(viewport.height * ratio);
-    element.append(canvas);
-    const task = page.render({ canvas, viewport, transform: [ratio, 0, 0, ratio, 0, 0] }); this.tasks.set(index, task);
-    try { await task.promise; } catch (error) { canvas.remove(); if ((error as Error).name !== 'RenderingCancelledException') console.error(error); }
-    finally { if (this.tasks.get(index) === task) this.tasks.delete(index); }
+    let canvas: HTMLCanvasElement | undefined;
+    let task: RenderTask | undefined;
+    try {
+      const page = await this.pdf.getPage(index + 1);
+      if (generation !== this.generation || !this.visible.has(index) || this.tasks.has(index) || element.querySelector('canvas')) return;
+      element.querySelector('.page-render-error')?.remove();
+      const viewport = page.getViewport({ scale: element.clientWidth / page.getViewport({ scale: 1 }).width });
+      const ratio = Math.min(devicePixelRatio || 1, 2, Math.sqrt(4000000 / (viewport.width * viewport.height)));
+      canvas = document.createElement('canvas'); canvas.width = Math.floor(viewport.width * ratio); canvas.height = Math.floor(viewport.height * ratio);
+      element.append(canvas);
+      task = page.render({ canvas, viewport, transform: [ratio, 0, 0, ratio, 0, 0] }); this.tasks.set(index, task);
+      await task.promise;
+    } catch (error) {
+      canvas?.remove();
+      if (this.destroyed || generation !== this.generation || (error as Error).name === 'RenderingCancelledException') return;
+      console.error(error);
+      element.querySelector('.page-render-error')?.remove();
+      const notice = document.createElement('div'); notice.className = 'page-render-error'; notice.setAttribute('role', 'alert');
+      const text = document.createElement('p');
+      text.textContent = `Could not display page ${index + 1}: ${error instanceof Error ? error.message : String(error)}`;
+      const retry = document.createElement('button'); retry.className = 'secondary'; retry.textContent = 'Retry page';
+      retry.onclick = () => { notice.remove(); void this.render(index); };
+      notice.append(text, retry); element.append(notice);
+    } finally { if (task && this.tasks.get(index) === task) this.tasks.delete(index); }
   }
   private geometry() { return { tops: this.pages.map(page => page.offsetTop), heights: this.pages.map(page => page.offsetHeight) }; }
   position(): Position | undefined {
     if (!this.pages.length) return;
     const { tops, heights } = this.geometry();
-    return { ...locatePosition(tops, heights, this.host.scrollTop), zoom: this.zoom };
+    return { ...locatePosition(tops, heights, this.host.scrollTop), zoom: this.zoom, horizontal: horizontalOffset(this.host.scrollLeft, this.host.scrollWidth, this.host.clientWidth) };
   }
+  private emitPosition() { const position = this.position(); if (position) { this.onPage?.(position.page); this.onPosition?.(position); } }
   setZoom(value: number) {
-    const position = this.position(); this.zoom = Math.max(.75, Math.min(2, value)); this.layout();
-    if (position) this.follow({ ...position, zoom: this.zoom }, true);
-    const next = this.position(); if (next) this.onPosition?.(next);
+    this.cancelFollow();
+    const center = { x: this.host.clientWidth / 2, y: this.host.clientHeight / 2 };
+    this.zoomAt(value, center, center);
   }
-  jump(page: number) { this.follow({ page: Math.max(1, Math.min(this.count, page)), offset: 0, zoom: this.zoom }, true); const p = this.position(); if (p) { this.onPage?.(p.page); this.onPosition?.(p); } }
+  private zoomAt(value: number, from: Point, to: Point) {
+    if (!this.pages.length) return;
+    const { tops, heights } = this.geometry();
+    const anchor = locatePosition(tops, heights, this.host.scrollTop + from.y);
+    const page = this.pages[anchor.page - 1];
+    const horizontalAnchor = (this.host.scrollLeft + from.x - page.offsetLeft) / page.offsetWidth;
+    const nextZoom = clampZoom(value);
+    if (nextZoom !== this.zoom) { this.zoom = nextZoom; this.layout(); }
+    const geometry = this.geometry();
+    this.host.scrollTop = positionTop(anchor, geometry.tops, geometry.heights) - to.y;
+    this.host.scrollLeft = page.offsetLeft + horizontalAnchor * page.offsetWidth - to.x;
+    this.emitPosition();
+  }
+  jump(page: number) { this.follow({ page: Math.max(1, Math.min(this.count, page)), offset: 0, zoom: this.zoom, horizontal: this.position()?.horizontal }, true); }
   follow(position: Position, immediate = false) {
     if (!this.pages.length) return;
-    if (this.zoom !== position.zoom) { this.zoom = position.zoom; this.layout(); }
+    this.sharedPosition = { ...position };
+    const zoom = clampZoom(position.zoom);
+    if (this.zoom !== zoom) { this.zoom = zoom; this.layout(); }
     const { tops, heights } = this.geometry();
-    this.target = Math.min(Math.max(0, positionTop(position, tops, heights)), this.host.scrollHeight - this.host.clientHeight);
+    this.target = {
+      top: Math.min(Math.max(0, positionTop(position, tops, heights)), Math.max(0, this.host.scrollHeight - this.host.clientHeight)),
+      left: horizontalLeft(position, this.host.scrollWidth, this.host.clientWidth)
+    };
     cancelAnimationFrame(this.frame);
-    if (immediate) { this.host.scrollTop = this.target; this.target = undefined; return; }
+    if (immediate) { this.host.scrollTop = this.target.top; this.host.scrollLeft = this.target.left; this.target = undefined; this.emitPosition(); return; }
     let previous = performance.now();
     const animate = (now: number) => {
       if (this.target === undefined) return;
-      const delta = this.target - this.host.scrollTop;
-      if (Math.abs(delta) < 1.5) { this.host.scrollTop = this.target; this.target = undefined; return; }
-      const step = delta * (1 - Math.exp(-Math.min(now - previous, 64) / 45));
-      this.host.scrollTop += Math.abs(step) < 1 ? Math.sign(delta) : step; previous = now;
+      const dy = this.target.top - this.host.scrollTop;
+      const dx = this.target.left - this.host.scrollLeft;
+      if (Math.abs(dx) < 1.5 && Math.abs(dy) < 1.5) { this.host.scrollTop = this.target.top; this.host.scrollLeft = this.target.left; this.target = undefined; this.emitPosition(); return; }
+      const factor = 1 - Math.exp(-Math.min(now - previous, 64) / 45);
+      const step = (delta: number) => Math.abs(delta * factor) < 1 ? Math.sign(delta) : delta * factor;
+      this.host.scrollTop += step(dy); this.host.scrollLeft += step(dx); previous = now;
       this.frame = requestAnimationFrame(animate);
     };
     this.frame = requestAnimationFrame(animate);
   }
-  cancelFollow() { cancelAnimationFrame(this.frame); this.target = undefined; }
+  cancelFollow() { cancelAnimationFrame(this.frame); this.target = undefined; this.sharedPosition = undefined; }
   async search(query: string): Promise<{ page: number; text: string }[]> {
     if (!this.pdf) return [];
     const matches: { page: number; text: string }[] = [];
@@ -111,5 +174,5 @@ export class SongbookViewer {
     }
     return matches;
   }
-  destroy() { this.destroyed = true; cancelAnimationFrame(this.frame); this.observer?.disconnect(); this.resizeObserver.disconnect(); this.tasks.forEach(task => task.cancel()); void this.loading?.destroy(); }
+  destroy() { this.destroyed = true; this.events.abort(); this.gestures.destroy(); clearTimeout(this.renderTimer); cancelAnimationFrame(this.frame); this.observer?.disconnect(); this.resizeObserver.disconnect(); this.tasks.forEach(task => task.cancel()); void this.loading?.destroy(); }
 }

@@ -1,7 +1,7 @@
 import { randomInt, randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
-import type { Room, Position } from '../src/model';
+import { MAX_ZOOM, MIN_ZOOM, type Room, type Position } from '../src/model';
 
 type Listener = (room: Room | null) => void;
 type Entry = { room: Room; token: string; listeners: Set<Listener> };
@@ -26,8 +26,9 @@ export class LocalRoomStore {
     const entry = this.rooms.get(code);
     if (!entry || entry.room.expiresAt <= this.now()) return 'missing';
     if (!token || token !== entry.token) return 'forbidden';
-    if (!Number.isInteger(position.page) || position.page < 1 || position.page > 10000 || !Number.isFinite(position.offset) || position.offset < 0 || position.offset > 1 || !Number.isFinite(position.zoom) || position.zoom < .75 || position.zoom > 2) return 'invalid';
-    entry.room.position = { page: position.page, offset: position.offset, zoom: position.zoom, sequence: (entry.room.position.sequence || 0) + 1, updatedAt: this.now() };
+    const horizontal = position.horizontal ?? 0;
+    if (!Number.isInteger(position.page) || position.page < 1 || position.page > 10000 || !Number.isFinite(position.offset) || position.offset < 0 || position.offset > 1 || !Number.isFinite(position.zoom) || position.zoom < MIN_ZOOM || position.zoom > MAX_ZOOM || !Number.isFinite(horizontal) || horizontal < 0 || horizontal > 1) return 'invalid';
+    entry.room.position = { page: position.page, offset: position.offset, zoom: position.zoom, horizontal, sequence: (entry.room.position.sequence || 0) + 1, updatedAt: this.now() };
     for (const listener of entry.listeners) listener(structuredClone(entry.room));
     return 'ok';
   }
