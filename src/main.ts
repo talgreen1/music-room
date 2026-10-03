@@ -53,6 +53,14 @@ async function openRoom(code: string) {
     $('#copy').onclick = async () => { try { await navigator.clipboard.writeText(url.href); $('#copy-status').textContent = 'Link copied.'; } catch { $('#copy-status').textContent = 'Copy the link above to share.'; } };
   };
   viewer = new SongbookViewer($('#pdf'));
+  viewer.onLinkError = message;
+  const orientation = document.createElement('label');
+  orientation.className = 'orientation-control'; orientation.hidden = true;
+  const rtl = document.createElement('input'); rtl.type = 'checkbox'; rtl.checked = true;
+  rtl.setAttribute('aria-label', 'RTL orientation');
+  orientation.append(rtl, document.createTextNode('RTL'));
+  $('.toolbar').append(orientation);
+  rtl.onchange = () => { if (master && ready) viewer?.setRtl(rtl.checked); };
   publisher = new PositionPublisher(position => service.publish(position), error => message(errorText(error)));
   viewer.onPage = page => { $<HTMLInputElement>('#page').value = String(page); };
   viewer.onPosition = position => {
@@ -69,6 +77,8 @@ async function openRoom(code: string) {
   $('#zoom-out').onclick = () => { if (independent()) viewer?.setZoom((viewer.position()?.zoom || 1) - .1); };
   $('#zoom-in').onclick = () => { if (independent()) viewer?.setZoom((viewer.position()?.zoom || 1) + .1); };
   function updateFollow() {
+    orientation.hidden = !master;
+    rtl.disabled = !ready;
     $('#follow').textContent = following ? 'Following Master' : 'Browse independently'; $('#follow').setAttribute('aria-pressed', String(following));
     $('#pdf').classList.toggle('locked', !master && following);
     $<HTMLButtonElement>('#follow').disabled = !ready;
@@ -84,6 +94,7 @@ async function openRoom(code: string) {
   function unavailable(title: string, explanation: string) {
     if (token !== generation) return;
     ready = false; master = false; viewer?.cancelFollow();
+    orientation.hidden = true;
     $('#role').textContent = 'Room unavailable';
     $('#follow-controls').hidden = true;
     $('#pdf').hidden = true;

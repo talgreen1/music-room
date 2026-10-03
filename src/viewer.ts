@@ -4,6 +4,7 @@ import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy, type RenderTas
 import worker from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import { clampZoom, horizontalOffset, horizontalLeft, locatePosition, positionTop, type Position } from './model';
 import { PdfGestures, type Point } from './gestures';
+import { resolvePdfLink } from './pdf-links';
 GlobalWorkerOptions.workerSrc = worker;
 export class SongbookViewer {
   private pdf?: PDFDocumentProxy;
@@ -14,7 +15,9 @@ export class SongbookViewer {
   private observer?: IntersectionObserver;
   private tasks = new Map<number, RenderTask>();
   private visible = new Set<number>();
+  private links = new Map<number, Promise<void>>();
   private zoom = 1;
+  private rtl = true;
   private frame = 0;
   private target?: { top: number; left: number };
   private sharedPosition?: Position;
@@ -25,6 +28,7 @@ export class SongbookViewer {
   private resizeObserver: ResizeObserver;
   onPosition?: (position: Position) => void;
   onPage?: (page: number) => void;
+  onLinkError?: (message: string) => void;
   constructor(private host: HTMLElement) {
     host.addEventListener('scroll', () => this.emitPosition(), { passive: true, signal: this.events.signal });
     this.gestures = new PdfGestures(host, {
@@ -83,6 +87,9 @@ export class SongbookViewer {
     }, 120);
   }
   private async render(index: number) {
+    // Link regions use percentage coordinates, so they survive canvas refreshes
+    // and remain aligned while pinch zoom temporarily scales an existing canvas.
+    if (!this.links.has(index)) this.links.set(index, this.addLinks(index));
     const generation = this.generation;
     const element = this.pages[index];
     if (!this.pdf || this.tasks.has(index) || element.querySelector('canvas')) return;
@@ -111,6 +118,42 @@ export class SongbookViewer {
       notice.append(text, retry); element.append(notice);
     } finally { if (task && this.tasks.get(index) === task) this.tasks.delete(index); }
   }
+  private async addLinks(index: number) {
+    try {
+      if (!this.pdf) return;
+      const page = await this.pdf.getPage(index + 1);
+      const annotations = await page.getAnnotations({ intent: 'display' });
+      if (this.destroyed) return;
+      const viewport = page.getViewport({ scale: 1 });
+      const layer = document.createElement('div'); layer.className = 'pdf-links';
+      for (const annotation of annotations) {
+        if (annotation.subtype !== 'Link' || !annotation.dest || !Array.isArray(annotation.rect)) continue;
+        const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(annotation.rect);
+        const link = document.createElement('a'); link.className = 'pdf-link';
+        link.href = '#';
+        link.setAttribute('aria-label', annotation.overlaidText ? `Go to song: ${annotation.overlaidText}` : 'Go to linked PDF page');
+        Object.assign(link.style, {
+          left: `${Math.min(x1, x2) / viewport.width * 100}%`, top: `${Math.min(y1, y2) / viewport.height * 100}%`,
+          width: `${Math.abs(x2 - x1) / viewport.width * 100}%`, height: `${Math.abs(y2 - y1) / viewport.height * 100}%`
+        });
+        link.onclick = async event => {
+          event.preventDefault();
+          if (this.host.classList.contains('locked') || this.destroyed || !this.pdf) return;
+          try {
+            const destination = await resolvePdfLink(this.pdf, annotation.dest);
+            if (this.host.classList.contains('locked') || this.destroyed) return;
+            this.cancelFollow();
+            this.follow({ ...destination, zoom: this.zoom, horizontal: this.rtl ? 1 : 0 }, true);
+          } catch (error) { if (!this.destroyed) this.onLinkError?.(error instanceof Error ? error.message : 'Could not open this PDF link.'); }
+        };
+        layer.append(link);
+      }
+      this.pages[index].append(layer);
+    } catch (error) {
+      this.links.delete(index);
+      if (!this.destroyed) console.error('Could not load PDF links', error);
+    }
+  }
   private geometry() { return { tops: this.pages.map(page => page.offsetTop), heights: this.pages.map(page => page.offsetHeight) }; }
   position(): Position | undefined {
     if (!this.pages.length) return;
@@ -122,6 +165,14 @@ export class SongbookViewer {
     this.cancelFollow();
     const center = { x: this.host.clientWidth / 2, y: this.host.clientHeight / 2 };
     this.zoomAt(value, center, center);
+  }
+  setRtl(value: boolean) {
+    this.rtl = value;
+    const position = this.position();
+    if (position) {
+      this.cancelFollow();
+      this.follow({ ...position, horizontal: value ? 1 : 0 }, true);
+    }
   }
   private zoomAt(value: number, from: Point, to: Point) {
     if (!this.pages.length) return;

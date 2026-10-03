@@ -235,7 +235,23 @@ Live backend evidence: `node scripts/test-local-server.mjs` passed independent H
   - Acceptance: use matching compatibility viewer/worker bundles, verify actual index/song page rendering, show actionable per-page errors, and confirm the affected phone displays its PDF after refresh.
   - Evidence: switched to PDF.js compatibility bundles and added Retry page recovery covering asynchronous and synchronous rendering failures. `scripts/test-pdf-compat.mjs` removes newer built-ins before importing PDF.js and renders pages 1/73 with verified ink pixels. LAN browser rendering succeeds; user confirmed the affected phone test passed on 2026-10-03.
 
+## Embedded PDF links
+
+- [x] **MR-044 - Open embedded internal PDF links.** As a Master or independently browsing Follower, I can tap an index entry to navigate to its song in the loaded PDF.
+  - Acceptance: clickable regions match PDF annotations through zoom; resolve named destinations, page references, and destination vertical coordinates; Master navigation synchronizes; following Followers cannot navigate independently; independent Follower navigation does not change the room.
+  - Evidence: implemented on `feat/pdf-internal-links`. Twenty tests pass, including actual index link resolution in the supplied songbook and missing/invalid destination handling. Separate-origin local browser views verified Master index navigation to page 12 at 100% and 120% zoom, matching Follower page/zoom, independent Follower navigation to page 5, and Return to Master. Type checking and production build pass. Physical-phone tap testing remains a manual follow-up.
+
+- [x] **MR-045 - Pinch and drag over PDF links.** As a musician, I can start gestures anywhere on the index, including on linked text, while ordinary taps still navigate.
+  - Acceptance: one-pointer taps and slight finger movement remain clickable; dragging from a link pans the PDF; two fingers on links zoom it; gestures do not accidentally open links; the next tap and keyboard activation still work.
+  - Evidence: delayed pointer capture for link taps, 8 CSS pixel drag threshold, immediate two-pointer capture, and gesture click suppression. Twenty-three tests and type checking pass, covering both-finger link starts, implicit touch capture transfer, drag versus tap, click suppression, and subsequent tap/keyboard activation. Physical-phone confirmation remains a manual follow-up.
+
+- [x] **MR-046 - Align PDF link navigation for RTL songbooks.** As a Master, I have an RTL orientation checkbox checked by default, and linked songs open at the right edge while retaining zoom.
+  - Acceptance: the checkbox is visible only for the Master in the bottom toolbar alongside page/zoom controls; checked links align to the right edge, unchecked links align left; changing orientation aligns the current view; Followers receive the resulting shared horizontal position.
+  - Evidence: separate-origin local browser checks at 200% zoom opened page 12 at the maximum horizontal scroll on both Master and Follower. Unchecking RTL and navigating again retained 200% zoom and aligned both views at horizontal scroll 0. The checkbox was hidden for the Follower. All 23 tests, type checking, and build pass. Physical-phone confirmation remains a manual follow-up.
+
 ## Future backlog: not part of version 1
+
+Release evidence for MR-044 through MR-046: user confirmed the final link, gesture, RTL alignment, and bottom-toolbar changes work on 2026-10-03. All 23 tests and the guarded deployment build passed; actual PDF pages 1/73 rendered successfully with newer built-ins initially absent. Frontend deployed to https://talgreen-music-room.web.app. Specific iPhone/rotation coverage remains tracked separately.
 
 - [ ] **F-001 - Add a built-in song index.** As a musician, I can choose a song name to navigate to its page. Acceptance when scoped: versioned mapping agrees with the current PDF, including index-page offsets.
 - [ ] **F-002 - Add favorites.** As a musician, I can save favorite songs locally. Acceptance when scoped: favorites use stable source/song IDs and handle PDF version changes.
