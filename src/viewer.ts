@@ -29,20 +29,30 @@ export class SongbookViewer {
   onPosition?: (position: Position) => void;
   onPage?: (page: number) => void;
   onLinkError?: (message: string) => void;
+  onInteractionStart?: () => void;
+  onInteractionEnd?: () => void;
   constructor(private host: HTMLElement) {
     host.addEventListener('scroll', () => this.emitPosition(), { passive: true, signal: this.events.signal });
     this.gestures = new PdfGestures(host, {
       locked: () => host.classList.contains('locked') || !this.pdf,
-      start: () => this.cancelFollow(),
-      end: () => this.emitPosition(),
+      start: () => { this.onInteractionStart?.(); this.cancelFollow(); },
+      end: () => { this.emitPosition(); this.onInteractionEnd?.(); },
       pan: (dx, dy) => { host.scrollLeft += dx; host.scrollTop += dy; this.emitPosition(); },
       zoom: (factor, from, to) => this.zoomAt(this.zoom * factor, from, to)
     });
+    host.addEventListener('wheel', event => {
+      if (event.ctrlKey || host.classList.contains('locked')) return;
+      this.onInteractionStart?.(); this.cancelFollow(); this.onInteractionEnd?.();
+    }, { passive: true, signal: this.events.signal });
+    host.addEventListener('keydown', event => {
+      if (event.target !== host || host.classList.contains('locked') || !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) return;
+      this.onInteractionStart?.(); this.cancelFollow(); this.onInteractionEnd?.();
+    }, { signal: this.events.signal });
     this.resizeObserver = new ResizeObserver(() => {
       if (this.pdf) {
         // A following viewer must retain the Master's coordinates through resize,
         // rather than reinterpret old scroll pixels using its new viewport width.
-        const position = host.classList.contains('locked') ? this.sharedPosition || this.position() : this.position();
+        const position = host.classList.contains('following') ? this.sharedPosition || this.position() : this.position();
         this.layout(); if (position) this.follow(position, true);
       }
     });
@@ -139,12 +149,14 @@ export class SongbookViewer {
         link.onclick = async event => {
           event.preventDefault();
           if (this.host.classList.contains('locked') || this.destroyed || !this.pdf) return;
+          this.onInteractionStart?.();
           try {
             const destination = await resolvePdfLink(this.pdf, annotation.dest);
             if (this.host.classList.contains('locked') || this.destroyed) return;
             this.cancelFollow();
             this.follow({ ...destination, zoom: this.zoom, horizontal: this.rtl ? 1 : 0 }, true);
           } catch (error) { if (!this.destroyed) this.onLinkError?.(error instanceof Error ? error.message : 'Could not open this PDF link.'); }
+          finally { this.onInteractionEnd?.(); }
         };
         layer.append(link);
       }

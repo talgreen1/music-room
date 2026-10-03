@@ -17,7 +17,7 @@ Version 1 includes:
 - Create a room with a short numeric code; join by code or link.
 - A single configured songbook, rendered independently on every device with PDF.js.
 - Master-only updates to shared page, position within that page, and practical zoom synchronization.
-- Follow Master on/off and Return to Master.
+- Master sync checkbox with temporary browsing pauses and persistent manual opt-out.
 - Vertical scrolling, page navigation, page jump, zoom, and text search where the PDF supports it.
 - Share link/QR code, mobile viewing, connection status, and reconnect behavior.
 - Configuration and deployment instructions for static hosting and Firebase Realtime Database. Initial deployment uses Firebase Hosting with the existing CLI account; Cloudflare Pages remains an alternative.
@@ -116,7 +116,7 @@ Zoom means a multiplier relative to each device's base page width, not a fixed p
 - Coalesce pending writes rather than queueing every old position on a slow connection.
 - Send explicit page jumps immediately and avoid redundant unchanged updates.
 - Use a monotonic sequence to reject stale positions within a room's session.
-- Followers interpolate toward the latest target with requestAnimationFrame. Large page jumps, first join, Return to Master, and reconnect can snap directly.
+- Followers interpolate toward the latest target with requestAnimationFrame. Large page jumps, first join, automatic/manual sync return, and reconnect can snap directly.
 - Apply received position only after the PDF geometry is ready; retain the latest state during loading.
 - Programmatic follower scrolls never publish updates.
 
@@ -124,7 +124,7 @@ Target observed latency is tens to a few hundred milliseconds on a healthy conne
 
 ### Follow mode
 
-Followers start with Follow Master on. Disable independent vertical navigation while following, or require an explicit switch to browsing before navigation; avoid fighting the user's gestures with automatic scrolling. When off, retain the latest Master position in memory without moving the follower. Return to Master snaps to that latest position and re-enables following.
+Followers start with Master sync checked. PDF/scrollbar interaction immediately pauses local following and unchecks the checkbox; three seconds after all interaction ends, return to the latest Master position and check it again. Further activity resets the delay. Manual opt-out cancels the timer and remains off until the user checks the checkbox, which resumes immediately. Retain incoming Master state throughout the pause. Use explicit interaction events rather than scroll events so incoming Master updates never start a browsing timeout. Cancel pending timers when leaving or losing the room.
 
 ## 7. PDF performance and search
 
@@ -138,7 +138,7 @@ Search uses extracted PDF text, including Hebrew when available. Index increment
 
 Use a quiet dark background, high-contrast text, and the original light PDF pages as the focus. Home shows Create Room and Join Room. An active room has a compact header for code, role, sharing, and connection status, with the viewer occupying the remaining screen.
 
-Use at least 48 CSS px touch targets, generous spacing, safe-area insets, accessible labels, keyboard support, and portrait/landscape layouts. Keep primary controls reachable with one hand. Followers see Follow Master and Return to Master; the Master sees **You are the Master**.
+Use compact 32 CSS px header/toolbar controls as requested to maximize PDF space, while preserving accessible labels, keyboard support, safe-area insets, and portrait/landscape layouts. Followers have Master sync as their first bottom-toolbar element with page/zoom readouts and no vertical scrollbar. The Master sees **You are the Master**, the draggable scrollbar, and the navigation/sharing controls. There is no separate Follower button row.
 
 Page/zoom/search controls can live in a compact bottom toolbar or simple sheet. Browser fullscreen is progressive enhancement: provide a usable expanded viewer when the browser cannot offer fullscreen. Keep Hebrew PDF content intact; UI localization can follow separately.
 
