@@ -6,6 +6,8 @@ export class PdfScrollbar {
   private resize: ResizeObserver;
   private enabled = false;
   private drag?: { id: number; grab: number };
+  onInteractionStart?: () => void;
+  onInteractionEnd?: () => void;
   constructor(private host: HTMLElement) {
     this.element.className = 'pdf-scrollbar'; this.thumb.className = 'pdf-scrollbar-thumb';
     this.element.append(this.thumb);
@@ -20,7 +22,9 @@ export class PdfScrollbar {
     this.resize.observe(host); this.resize.observe(this.element);
     this.element.addEventListener('pointerdown', event => {
       if (!this.enabled || (event.pointerType === 'mouse' && event.button !== 0)) return;
+      if (this.drag) return;
       event.preventDefault();
+      this.onInteractionStart?.();
       const track = this.element.getBoundingClientRect();
       const thumb = this.thumb.getBoundingClientRect();
       const grab = event.target === this.thumb ? event.clientY - thumb.top : thumb.height / 2;
@@ -37,6 +41,7 @@ export class PdfScrollbar {
       if (this.drag?.id !== event.pointerId) return;
       this.drag = undefined;
       if (this.element.hasPointerCapture(event.pointerId)) this.element.releasePointerCapture(event.pointerId);
+      this.onInteractionEnd?.();
     };
     for (const name of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) this.element.addEventListener(name, finish, options);
     this.element.addEventListener('keydown', event => {
@@ -48,7 +53,7 @@ export class PdfScrollbar {
         Home: 0, End: this.host.scrollHeight - this.host.clientHeight
       };
       if (!(event.key in positions)) return;
-      event.preventDefault(); this.host.scrollTop = positions[event.key]; this.refresh();
+      event.preventDefault(); this.onInteractionStart?.(); this.host.scrollTop = positions[event.key]; this.refresh(); this.onInteractionEnd?.();
     }, options);
     this.setEnabled(false);
   }
@@ -73,6 +78,7 @@ export class PdfScrollbar {
     if (!value && this.drag) {
       const id = this.drag.id; this.drag = undefined;
       if (this.element.hasPointerCapture(id)) this.element.releasePointerCapture(id);
+      this.onInteractionEnd?.();
     }
     this.refresh();
   }

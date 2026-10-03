@@ -5,12 +5,14 @@ import { validCode, type Room } from './model';
 import { SongbookViewer } from './viewer';
 import { PositionPublisher } from './sync';
 import { PdfScrollbar } from './scrollbar';
+import { FollowerSync } from './follower-sync';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const service = new RoomService();
 let viewer: SongbookViewer | undefined;
 let scrollbar: PdfScrollbar | undefined;
 let publisher: PositionPublisher | undefined;
+let followerSync: FollowerSync | undefined;
 let room: Room | undefined;
 let master = false;
 let following = true;
@@ -23,7 +25,7 @@ const $ = <T extends HTMLElement = HTMLElement>(selector: string) => app.querySe
 const safe = (value: string) => value.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
 const message = (value: string) => { const element = app.querySelector<HTMLElement>('#notice'); if (element) { element.textContent = value; element.hidden = !value; } };
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong. Please try again.';
-function cleanup() { generation++; publisher?.stop(); publisher = undefined; scrollbar?.destroy(); scrollbar = undefined; viewer?.destroy(); viewer = undefined; service.leave(); room = undefined; ready = false; lastSequence = -1; lastPublished = ''; }
+function cleanup() { generation++; followerSync?.destroy(); followerSync = undefined; publisher?.stop(); publisher = undefined; scrollbar?.destroy(); scrollbar = undefined; viewer?.destroy(); viewer = undefined; service.leave(); room = undefined; ready = false; lastSequence = -1; lastPublished = ''; }
 
 function home() {
   cleanup();
@@ -46,7 +48,7 @@ function home() {
 
 async function openRoom(code: string) {
   cleanup(); const token = generation; master = false; following = true; connection = 'Reconnecting…';
-  app.innerHTML = `<main class="session"><header class="room-header"><button id="leave" class="icon-button" aria-label="Leave room">←</button><div class="room-identity"><span class="small-label">ROOM ${safe(code)}</span><strong id="role">Joining your group…</strong></div><span id="connection" class="connection" role="status">Reconnecting…</span><button id="share" class="secondary compact">Share</button></header>${!cloudConfigured ? localServerConfigured ? '<div class="demo-bar">LOCAL DEVELOPMENT · Shared across browsers</div>' : '<div class="demo-bar">BROWSER-ONLY DEMO · Same-browser tabs only</div>' : ''}<div id="notice" class="notice room-notice" role="alert" hidden></div><div id="pdf" class="pdf-host" tabindex="0" aria-label="Songbook"></div><nav class="toolbar" aria-label="Songbook controls"><button id="previous" class="icon-button" aria-label="Previous page">‹</button><form id="page-form"><label class="sr-only" for="page">Page number</label><input id="page" type="number" min="1" value="1" aria-label="Page number"/><span id="count"> / —</span></form><button id="next" class="icon-button" aria-label="Next page">›</button><div class="toolbar-divider"></div><button id="zoom-out" class="icon-button" aria-label="Zoom out">−</button><span id="zoom">100%</span><button id="zoom-in" class="icon-button" aria-label="Zoom in">+</button></nav><div id="follow-controls" class="follow-controls" hidden><button id="follow" class="secondary" aria-pressed="true">Following Master</button><button id="return" class="primary">Return to Master</button></div></main><dialog id="share-dialog"><form method="dialog"><button class="dialog-close icon-button" aria-label="Close">×</button></form><p class="eyebrow">INVITE YOUR GROUP</p><h2>Room ${safe(code)}</h2><canvas id="qr"></canvas><p id="share-url"></p><button id="copy" class="primary">Copy room link</button><p id="copy-status" role="status"></p></dialog>`;
+  app.innerHTML = `<main class="session"><header class="room-header"><button id="leave" class="icon-button" aria-label="Leave room">←</button><div class="room-identity"><span class="small-label">ROOM ${safe(code)}</span><strong id="role">Joining your group…</strong></div><span id="connection" class="connection" role="status">Reconnecting…</span><button id="share" class="secondary compact">Share</button></header>${!cloudConfigured ? localServerConfigured ? '<div class="demo-bar">LOCAL DEVELOPMENT · Shared across browsers</div>' : '<div class="demo-bar">BROWSER-ONLY DEMO · Same-browser tabs only</div>' : ''}<div id="notice" class="notice room-notice" role="alert" hidden></div><div id="pdf" class="pdf-host" tabindex="0" aria-label="Songbook"></div><nav class="toolbar" aria-label="Songbook controls"><button id="previous" class="icon-button" aria-label="Previous page">‹</button><form id="page-form"><label class="sr-only" for="page">Page number</label><input id="page" type="number" min="1" value="1" aria-label="Page number"/><span id="count"> / —</span></form><button id="next" class="icon-button" aria-label="Next page">›</button><div class="toolbar-divider"></div><button id="zoom-out" class="icon-button" aria-label="Zoom out">−</button><span id="zoom">100%</span><button id="zoom-in" class="icon-button" aria-label="Zoom in">+</button></nav></main><dialog id="share-dialog"><form method="dialog"><button class="dialog-close icon-button" aria-label="Close">×</button></form><p class="eyebrow">INVITE YOUR GROUP</p><h2>Room ${safe(code)}</h2><canvas id="qr"></canvas><p id="share-url"></p><button id="copy" class="primary">Copy room link</button><p id="copy-status" role="status"></p></dialog>`;
   $('#leave').onclick = () => { history.pushState({}, '', '/'); home(); };
   $('#share').onclick = async () => {
     const url = new URL(location.href); url.search = `?room=${code}`;
@@ -61,8 +63,24 @@ async function openRoom(code: string) {
   firstPage.id = 'first-page'; firstPage.className = 'icon-button';
   firstPage.setAttribute('aria-label', 'Jump to page 1'); firstPage.title = 'Jump to page 1';
   firstPage.textContent = '⇤'; $('.toolbar').prepend(firstPage);
+  const followerPage = document.createElement('span'); followerPage.id = 'follower-page'; followerPage.textContent = 'Page 1';
+  $('.toolbar').append(followerPage);
   viewer = new SongbookViewer($('#pdf'));
   viewer.onLinkError = message;
+  const syncControl = document.createElement('label'); syncControl.className = 'sync-control'; syncControl.hidden = true;
+  const syncCheckbox = document.createElement('input'); syncCheckbox.type = 'checkbox'; syncCheckbox.checked = true;
+  syncControl.append(syncCheckbox, document.createTextNode('Master sync')); $('.toolbar').prepend(syncControl);
+  const sync = new FollowerSync(value => {
+    following = value; syncCheckbox.checked = value;
+    if (!value) viewer?.cancelFollow();
+    updateFollow();
+  }, () => { if (ready && room && token === generation) viewer?.follow(room.position, true); });
+  followerSync = sync;
+  const beginBrowsing = () => { if (token === generation && !master && ready) sync.begin(); };
+  const endBrowsing = () => { if (token === generation && !master && ready) sync.end(); };
+  viewer.onInteractionStart = beginBrowsing; viewer.onInteractionEnd = endBrowsing;
+  scrollbar.onInteractionStart = beginBrowsing; scrollbar.onInteractionEnd = endBrowsing;
+  syncCheckbox.onchange = () => { if (!master && ready) sync.setManual(syncCheckbox.checked); };
   const orientation = document.createElement('label');
   orientation.className = 'orientation-control'; orientation.hidden = true;
   const rtl = document.createElement('input'); rtl.type = 'checkbox'; rtl.checked = true;
@@ -71,7 +89,7 @@ async function openRoom(code: string) {
   $('.toolbar').append(orientation);
   rtl.onchange = () => { if (master && ready) viewer?.setRtl(rtl.checked); };
   publisher = new PositionPublisher(position => service.publish(position), error => message(errorText(error)));
-  viewer.onPage = page => { $<HTMLInputElement>('#page').value = String(page); };
+  viewer.onPage = page => { $<HTMLInputElement>('#page').value = String(page); followerPage.textContent = `Page ${page} / ${viewer?.count || '…'}`; };
   viewer.onPosition = position => {
     scrollbar?.refresh();
     $('#zoom').textContent = `${Math.round(position.zoom * 100)}%`;
@@ -88,17 +106,19 @@ async function openRoom(code: string) {
   $('#zoom-out').onclick = () => { if (independent()) viewer?.setZoom((viewer.position()?.zoom || 1) - .1); };
   $('#zoom-in').onclick = () => { if (independent()) viewer?.setZoom((viewer.position()?.zoom || 1) + .1); };
   function updateFollow() {
-    scrollbar?.setEnabled(ready && independent());
+    if (scrollbar) scrollbar.element.hidden = !master;
+    scrollbar?.setEnabled(ready && master);
     orientation.hidden = !master;
     rtl.disabled = !ready;
-    $('#follow').textContent = following ? 'Following Master' : 'Browse independently'; $('#follow').setAttribute('aria-pressed', String(following));
-    $('#pdf').classList.toggle('locked', !master && following);
-    $<HTMLButtonElement>('#follow').disabled = !ready;
-    $<HTMLButtonElement>('#return').disabled = !ready || !room;
+    syncControl.hidden = master; syncCheckbox.disabled = !ready;
+    $('#share').hidden = !master;
+    $('#pdf').classList.toggle('locked', !ready);
+    $('#pdf').classList.toggle('following', !master && following);
     for (const selector of ['#first-page', '#previous', '#next', '#page', '#zoom-out', '#zoom-in']) ($<HTMLButtonElement | HTMLInputElement>(selector)).disabled = !ready || !independent();
+    for (const selector of ['#first-page', '#previous', '#next', '#zoom-out', '#zoom-in', '.toolbar-divider']) $(selector).hidden = !master;
+    $('#page-form').hidden = !master;
+    $('#follower-page').hidden = master;
   }
-  $('#follow').onclick = () => { following = !following; if (following && room) viewer?.follow(room.position, true); else viewer?.cancelFollow(); updateFollow(); };
-  $('#return').onclick = () => { following = true; if (room) viewer?.follow(room.position, true); updateFollow(); };
   updateFollow();
   const recovery = document.createElement('section');
   recovery.className = 'room-recovery'; recovery.hidden = true;
@@ -109,7 +129,7 @@ async function openRoom(code: string) {
     scrollbar?.setEnabled(false);
     orientation.hidden = true;
     $('#role').textContent = 'Room unavailable';
-    $('#follow-controls').hidden = true;
+    sync.destroy();
     pdfFrame.hidden = true;
     $('.toolbar').hidden = true;
     $<HTMLButtonElement>('#share').disabled = true;
@@ -131,7 +151,7 @@ async function openRoom(code: string) {
     }
     if ((next.position.sequence || 0) < lastSequence) return;
     const first = !room; const previous = room?.position; room = next; master = service.isMaster(next);
-    $('#role').textContent = master ? 'You are the Master' : 'Follower'; $('#follow-controls').hidden = master;
+    $('#role').textContent = master ? 'You are the Master' : 'Follower';
     if (first) {
       recovery.hidden = true; pdfFrame.hidden = false; $('.toolbar').hidden = false;
       $<HTMLButtonElement>('#share').disabled = false;

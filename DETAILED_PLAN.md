@@ -257,7 +257,15 @@ Live backend evidence: `node scripts/test-local-server.mjs` passed independent H
 
 Release evidence for MR-044 through MR-046: user confirmed the final link, gesture, RTL alignment, and bottom-toolbar changes work on 2026-10-03. All 23 tests and the guarded deployment build passed; actual PDF pages 1/73 rendered successfully with newer built-ins initially absent. Frontend deployed to https://talgreen-music-room.web.app. Specific iPhone/rotation coverage remains tracked separately.
 
+## Compact controls and Follower sync
+
+- [x] **MR-048 - Maximize viewer space and simplify Follower syncing.** As a musician, I see smaller header/toolbar controls; Followers have Master sync as the first toolbar element and can browse without first changing modes.
+  - Acceptance: Follower navigation/sharing, vertical scrollbar, and old follow buttons are removed; interaction unchecks sync and returns to the latest Master state three seconds after interaction ends; further activity restarts the delay; manual opt-out persists until checked; cleanup prevents stale returns; Followers never publish room state.
+  - Evidence: implemented on `feat/compact-view-and-auto-sync`. All 32 tests, type checking, and build pass, including timer restart, overlapping/held gestures, manual opt-out, immediate manual resume, and disposal. Separate-origin browser views verified temporary scrollbar browsing returning to the Master's newly selected page 37, manual opt-out remaining on page 73 after the Master moved to page 50, and rechecking immediately restoring page 50. Follower toolbar has no visible navigation buttons and starts with Master sync. Header/toolbar measured 45/41 pixels in the browser preview. Physical-phone gesture testing remains a manual follow-up.
+
 ## Future backlog: not part of version 1
+
+Release evidence for MR-048: user confirmed the final compact controls, Follower sync, and Master-only scrollbar changes work on 2026-10-03. All 32 tests and the guarded deployment build passed, as did rendering actual PDF pages with newer built-ins initially absent. Frontend deployed to https://talgreen-music-room.web.app. Specific iPhone/rotation coverage remains tracked separately.
 
 - [ ] **F-001 - Add a built-in song index.** As a musician, I can choose a song name to navigate to its page. Acceptance when scoped: versioned mapping agrees with the current PDF, including index-page offsets.
 - [ ] **F-002 - Add favorites.** As a musician, I can save favorite songs locally. Acceptance when scoped: favorites use stable source/song IDs and handle PDF version changes.
