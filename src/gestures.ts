@@ -10,26 +10,35 @@ interface Callbacks {
 /** Own gestures inside the PDF only; browser/UI zoom elsewhere remains available. */
 export class PdfGestures {
   private pointers = new Map<number, Point>();
+  private active = false;
+  private suppressLinkClick = false;
   private events = new AbortController();
   constructor(private host: HTMLElement, private callbacks: Callbacks) {
     const options = { signal: this.events.signal };
     host.addEventListener('pointerdown', event => {
       const target = event.target as HTMLElement;
-      if (typeof target.closest === 'function' && target.closest('button, input, a')) return;
+      if (typeof target.closest === 'function' && target.closest('button, input')) return;
       if (callbacks.locked() || (event.pointerType === 'mouse' && event.button !== 0)) return;
-      event.preventDefault();
-      if (!this.pointers.size) callbacks.start();
+      if (!this.pointers.size) this.suppressLinkClick = false;
       this.pointers.set(event.pointerId, this.point(event));
-      host.setPointerCapture(event.pointerId);
-      host.classList.add('dragging');
+      const link = typeof target.closest === 'function' && target.closest('a');
+      // Let a single finger/mouse click reach the link. Capture only after a
+      // drag threshold or second finger establishes that this is a gesture.
+      if (!link || this.active || this.pointers.size > 1) {
+        event.preventDefault(); this.activate();
+      }
     }, options);
     host.addEventListener('pointermove', event => {
       const previous = this.pointers.get(event.pointerId);
       if (!previous) return;
-      event.preventDefault();
       if (callbacks.locked()) { this.clear(); return; }
-      const before = this.pair();
       const current = this.point(event);
+      if (!this.active) {
+        if (Math.hypot(previous.x - current.x, previous.y - current.y) < 8) return;
+        this.activate();
+      }
+      event.preventDefault();
+      const before = this.pair();
       this.pointers.set(event.pointerId, current);
       const after = this.pair();
       if (before && after) {
@@ -40,11 +49,25 @@ export class PdfGestures {
       } else callbacks.pan(previous.x - current.x, previous.y - current.y);
     }, options);
     const finish = (event: PointerEvent) => {
+      // Touch implicit capture can be transferred from a link to the host.
+      // Ignore that link's bubbling capture-loss event; our gesture continues.
+      if (event.type === 'lostpointercapture' && event.target !== host) return;
+      if (event.type === 'pointercancel' && this.pointers.has(event.pointerId)) this.suppressLinkClick = true;
       if (!this.pointers.delete(event.pointerId)) return;
       if (host.hasPointerCapture(event.pointerId)) host.releasePointerCapture(event.pointerId);
-      if (!this.pointers.size) { host.classList.remove('dragging'); callbacks.end(); }
+      if (!this.pointers.size) {
+        host.classList.remove('dragging');
+        if (this.active) { this.active = false; callbacks.end(); }
+      }
     };
     for (const name of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) host.addEventListener(name, finish, options);
+    host.addEventListener('click', event => {
+      // A gesture may finish over a link. Keep that resulting click from
+      // navigating, while preserving keyboard activation and the next real tap.
+      if (this.suppressLinkClick && event.detail !== 0 && (event.target as HTMLElement).closest?.('a')) {
+        event.preventDefault(); event.stopImmediatePropagation();
+      }
+    }, { ...options, capture: true });
     host.addEventListener('wheel', event => {
       // Trackpad pinches and Ctrl+wheel arrive as wheel events in desktop browsers.
       if (!event.ctrlKey) return;
@@ -64,10 +87,16 @@ export class PdfGestures {
     return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
   }
   private pair() { return this.pointers.size > 1 ? Array.from(this.pointers.values()).slice(0, 2) : undefined; }
+  private activate() {
+    if (!this.active) { this.active = true; this.suppressLinkClick = true; this.callbacks.start(); }
+    for (const id of this.pointers.keys()) if (!this.host.hasPointerCapture(id)) this.host.setPointerCapture(id);
+    this.host.classList.add('dragging');
+  }
   private clear() {
     const ids = [...this.pointers.keys()]; this.pointers.clear();
     for (const id of ids) if (this.host.hasPointerCapture(id)) this.host.releasePointerCapture(id);
-    this.host.classList.remove('dragging'); this.callbacks.end();
+    this.host.classList.remove('dragging');
+    if (this.active) { this.active = false; this.callbacks.end(); }
   }
   destroy() { this.events.abort(); this.clear(); }
 }

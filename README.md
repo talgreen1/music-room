@@ -14,6 +14,7 @@ music-room/
 │   ├── model.ts             # Room/position types, validation, and scroll coordinates
 │   ├── sync.ts              # Throttled Master position publisher
 │   ├── gestures.ts          # PDF-only pointer drag, pinch, and trackpad zoom
+│   ├── pdf-links.ts         # Internal PDF destination/page coordinate resolution
 │   ├── viewer.ts            # PDF.js loading, rendering, zoom, and smooth following
 │   ├── style.css            # Dark interface and responsive layouts
 │   └── *.test.ts            # Model, publisher, and local room store tests
@@ -92,6 +93,12 @@ The viewer converts Master scrolling into these coordinates. `PositionPublisher`
 Followers can turn following off to browse locally. Incoming updates still retain the Master's latest position. **Return to Master** restores that position and resumes following. Follower navigation never publishes shared state.
 
 Pinch inside the PDF to zoom around your fingers; drag with one finger or the primary mouse button to pan horizontally and vertically. Desktop trackpad pinch/Ctrl+wheel also changes document zoom. Gestures are handled within the PDF area, with native touch zoom disabled there; the app does not globally disable browser zoom. Existing canvases scale during a gesture and refresh their resolution after zoom settles. While following, Followers cannot drag or zoom independently; switch to browsing first.
+
+Tap or click the songbook's embedded internal links to open the referenced PDF page. Link regions scale with document zoom and use the PDF's destination coordinates, including named destinations and page object references. Navigation preserves the current document zoom and aligns to the right edge by default for the RTL songbook. The Master has an **RTL orientation** checkbox, checked by default; uncheck it for left-edge alignment. Changing the checkbox also aligns the current view. The resulting horizontal position and link navigation synchronize through the existing room position updates. Followers must switch to Browse independently to use links; Return to Master restores the shared view. These links navigate inside the loaded PDF rather than opening another browser page.
+
+The Master's RTL checkbox sits in the bottom toolbar alongside page and zoom controls. On narrow phones, swipe the toolbar horizontally to reach additional controls without adding another row over the PDF.
+
+Dragging and pinching also work when fingers start over links. A single tap opens the link; moving at least 8 CSS pixels starts a drag, and a second finger starts a pinch immediately. Gestures suppress accidental link activation when fingers lift. Keyboard link activation remains available.
 
 ### PDF rendering and backend modes
 
