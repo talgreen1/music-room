@@ -164,6 +164,14 @@ Firebase rule and transaction behavior references: [Realtime Database reads/writ
 
 ## 11. Future extension boundaries
 
+### Settings administration
+
+Settings is a separate home-screen route and authentication boundary. Musicians keep their anonymous Firebase sessions; the Settings account uses a second Firebase app with in-memory password authentication. A server-controlled UID allowlist authorizes room enumeration/deletion and writes to the current `/songbook` descriptor. Room creation reads this descriptor; active rooms retain their original URL/version/title.
+
+Replacement PDFs use Supabase Free Storage with public downloads and uploads restricted to the exact Settings Firebase UID, issuer and audience. Firebase third-party Auth validates the token; an INSERT-only storage policy prevents client overwrites/deletion. Versioned filenames retain active-room compatibility. Only public client configuration is bundled. Firebase Storage and paid functions are unnecessary.
+
+Local development uses a server-only password, expiring HttpOnly sessions and login throttling. PDF uploads (30 MB maximum and PDF header validation) and default metadata persist under `.local-data/`. Local room listing/deletion uses the same server store as room synchronization, notifying listeners when deleted. Room state itself remains ephemeral.
+
 Keep source identity separate from reading position so future source adapters can support an external chord view or structured songs. Keep room transport separate from PDF rendering. Future source-specific state may contain song IDs and transposition, while a WebRTC feature would use a separate media transport.
 
 Do not build those features now. External sites may block embedding or require authentication/subscriptions; any later integration must respect those restrictions.

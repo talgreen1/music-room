@@ -1,0 +1,50 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { loadEnv } from 'vite';
+import { initializeApp, deleteApp } from 'firebase/app';
+import { getAuth, signInWithEmailAndPassword, signInAnonymously, signOut, setPersistence, inMemoryPersistence } from 'firebase/auth';
+import { getDatabase, ref, get, set, remove, goOffline } from 'firebase/database';
+import { settingsCredential } from '../src/settings-password.mjs';
+
+const env = { ...loadEnv('deployment', process.cwd(), ''), ...process.env };
+const config = { apiKey: env.VITE_FIREBASE_API_KEY, authDomain: env.VITE_FIREBASE_AUTH_DOMAIN, databaseURL: env.VITE_FIREBASE_DATABASE_URL, projectId: env.VITE_FIREBASE_PROJECT_ID };
+assert.ok(env.MUSIC_ADMIN_PASSWORD && env.VITE_SUPABASE_URL && env.VITE_SUPABASE_PUBLISHABLE_KEY, 'Configure cloud Settings first.');
+const apps = ['admin', 'musician'].map(name => initializeApp(config, `settings-test-${name}-${Date.now()}`));
+const auths = apps.map(app => getAuth(app)), dbs = apps.map(app => getDatabase(app));
+const deadline = setTimeout(() => { console.error('Cloud Settings test timed out.'); process.exit(1); }, 60000);
+let ownCode;
+try {
+  await Promise.all(auths.map(auth => setPersistence(auth, inMemoryPersistence)));
+  const admin = (await signInWithEmailAndPassword(auths[0], env.VITE_ADMIN_EMAIL || 'settings@music-room.app', settingsCredential(env.MUSIC_ADMIN_PASSWORD))).user;
+  const musician = (await signInAnonymously(auths[1])).user;
+  await get(ref(dbs[0], 'rooms')); await assert.rejects(get(ref(dbs[1], 'rooms')));
+  await assert.rejects(get(ref(dbs[0], 'admins')));
+  const current = await get(ref(dbs[0], 'songbook'));
+  const descriptor = current.val() || { pdfUrl: '/songbooks/songbook-2026-10.pdf', pdfVersion: '2026-10', pdfTitle: 'חוברת שירים' };
+  await assert.rejects(set(ref(dbs[1], 'songbook'), descriptor));
+  await set(ref(dbs[0], 'songbook'), descriptor);
+  ownCode = String(100000 + Math.floor(Math.random() * 900000));
+  while ((await get(ref(dbs[0], `rooms/${ownCode}`))).exists()) ownCode = String(100000 + Math.floor(Math.random() * 900000));
+  const now = Date.now();
+  await set(ref(dbs[1], `rooms/${ownCode}`), { ...descriptor, masterId: musician.uid, createdAt: now, expiresAt: now + 86400000, position: { page: 1, offset: 0, zoom: 1, sequence: 0, updatedAt: now } });
+  await assert.rejects(remove(ref(dbs[1], `rooms/${ownCode}`)));
+  await remove(ref(dbs[0], `rooms/${ownCode}`));
+  assert.equal((await get(ref(dbs[0], `rooms/${ownCode}`))).exists(), false); ownCode = undefined;
+  const pdf = await readFile('public/songbooks/songbook-2026-10.pdf');
+  const filename = `verification-${Date.now()}.pdf`;
+  const endpoint = `${env.VITE_SUPABASE_URL}/storage/v1/object/songbooks/${filename}`;
+  const upload = async user => fetch(endpoint, { method: 'POST', headers: { apikey: env.VITE_SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${await user.getIdToken()}`, 'Content-Type': 'application/pdf', 'x-upsert': 'false', 'cache-control': 'max-age=31536000' }, body: pdf });
+  const denied = await upload(musician); assert.ok(!denied.ok, 'Musician must not upload PDFs.'); await denied.arrayBuffer();
+  const result = await upload(admin);
+  if (!result.ok) throw new Error(`Administrator upload failed: ${await result.text()}`); await result.arrayBuffer();
+  const publicUrl = `${env.VITE_SUPABASE_URL}/storage/v1/object/public/songbooks/${filename}`;
+  const downloaded = await fetch(publicUrl); assert.equal(downloaded.status, 200);
+  assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()), pdf);
+  const overwritten = await upload(admin); assert.ok(!overwritten.ok, 'Versioned PDFs must not be overwritten.'); await overwritten.arrayBuffer();
+  console.log('PASS: cloud admin room listing/deletion/default permissions, denied musician operations, Firebase-authenticated Supabase upload, public PDF byte equality and denied overwrite.');
+  console.log(`Verified PDF: ${publicUrl}`);
+} finally {
+  clearTimeout(deadline);
+  if (ownCode) await remove(ref(dbs[0], `rooms/${ownCode}`)).catch(() => {});
+  await Promise.all(auths.map(auth => signOut(auth))); dbs.forEach(db => goOffline(db)); await Promise.all(apps.map(app => deleteApp(app)));
+}
