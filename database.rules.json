@@ -2,10 +2,22 @@
   "rules": {
     ".read": false,
     ".write": false,
+    "admins": { ".read": false, ".write": false },
+    "songbook": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('admins').child(auth.uid).val() === true && newData.exists()",
+      ".validate": "newData.hasChildren(['pdfUrl','pdfVersion','pdfTitle'])",
+      "pdfUrl": { ".validate": "newData.isString() && newData.val().length <= 2048 && (newData.val().beginsWith('https://') || (newData.val().beginsWith('/') && !newData.val().beginsWith('//')))" },
+      "pdfVersion": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 100" },
+      "pdfTitle": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200" },
+      "$other": { ".validate": false }
+    },
     "rooms": {
+      ".read": "auth != null && root.child('admins').child(auth.uid).val() === true",
+      ".write": "auth != null && root.child('admins').child(auth.uid).val() === true && !newData.exists()",
       "$code": {
         ".read": "auth != null && $code.matches(/^[0-9]{6}$/) && (!data.exists() || data.child('expiresAt').val() > now)",
-        ".write": "auth != null && $code.matches(/^[0-9]{6}$/) && !data.exists() && newData.child('masterId').val() === auth.uid",
+        ".write": "auth != null && $code.matches(/^[0-9]{6}$/) && ((!data.exists() && newData.child('masterId').val() === auth.uid) || (root.child('admins').child(auth.uid).val() === true && !newData.exists()))",
         ".validate": "newData.hasChildren(['masterId','createdAt','expiresAt','pdfUrl','pdfVersion','pdfTitle','position'])",
         "masterId": { ".validate": "newData.isString() && ((!data.exists() && newData.val() === auth.uid) || newData.val() === data.val())" },
         "createdAt": { ".validate": "newData.isNumber() && ((!data.exists() && newData.val() >= now - 60000 && newData.val() <= now + 60000) || newData.val() === data.val())" },

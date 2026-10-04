@@ -2,6 +2,7 @@ import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, signInAnonymously, connectAuthEmulator } from 'firebase/auth';
 import { getDatabase, ref, get, onValue, runTransaction, set, serverTimestamp, connectDatabaseEmulator, type Database } from 'firebase/database';
 import { roomCode, normalizePosition, type Room, type Position } from './model';
+import { validateSongbook } from './songbook';
 const env = import.meta.env;
 let emulatorsConnected = false;
 export const useEmulators = env.VITE_USE_FIREBASE_EMULATORS === 'true';
@@ -27,7 +28,7 @@ export class RoomService {
       throw new Error('Firebase settings are incomplete. Fill all four Firebase values in .env.local, or clear them to use the local demo.');
     }
     if (cloudConfigured) {
-      const app = getApps()[0] || initializeApp({ apiKey: env.VITE_FIREBASE_API_KEY || 'demo-key', authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || 'demo-music-room.firebaseapp.com', databaseURL: env.VITE_FIREBASE_DATABASE_URL || 'https://demo-music-room-default-rtdb.firebaseio.com', projectId: env.VITE_FIREBASE_PROJECT_ID || 'demo-music-room' });
+      const app = getApps().find(app => app.name === '[DEFAULT]') || initializeApp({ apiKey: env.VITE_FIREBASE_API_KEY || 'demo-key', authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || 'demo-music-room.firebaseapp.com', databaseURL: env.VITE_FIREBASE_DATABASE_URL || 'https://demo-music-room-default-rtdb.firebaseio.com', projectId: env.VITE_FIREBASE_PROJECT_ID || 'demo-music-room' });
       this.db = getDatabase(app);
       const auth = getAuth(app);
       if (useEmulators && !emulatorsConnected) {
@@ -59,6 +60,10 @@ export class RoomService {
       sessionStorage.setItem(`music-master:${result.code}`, '1');
       sessionStorage.setItem(`music-master-token:${result.code}`, result.token);
       return result.code;
+    }
+    if (this.db) {
+      const descriptor = await get(ref(this.db, 'songbook'));
+      if (descriptor.exists()) Object.assign(songbook, validateSongbook(descriptor.val()));
     }
     const now = Date.now() + this.serverOffset;
     const room: Room = { masterId: this.uid, ...songbook, createdAt: now, expiresAt: now + 86400000, position: { page: 1, offset: 0, zoom: 1, sequence: 0, updatedAt: now } };

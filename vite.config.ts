@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
     }
   }
   return {
-    plugins: [localRoomsPlugin()],
+    plugins: [localRoomsPlugin({ ...loadEnv(mode, process.cwd(), ''), ...process.env } as Record<string, string>)],
     server: { host: '0.0.0.0', port: 5173, strictPort: true }
   };
 });

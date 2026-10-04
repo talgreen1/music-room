@@ -6,6 +6,7 @@ import { SongbookViewer } from './viewer';
 import { PositionPublisher } from './sync';
 import { PdfScrollbar } from './scrollbar';
 import { FollowerSync } from './follower-sync';
+import { showSettings } from './settings';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const service = new RoomService();
@@ -13,6 +14,7 @@ let viewer: SongbookViewer | undefined;
 let scrollbar: PdfScrollbar | undefined;
 let publisher: PositionPublisher | undefined;
 let followerSync: FollowerSync | undefined;
+let closeSettings: (() => void) | undefined;
 let room: Room | undefined;
 let master = false;
 let following = true;
@@ -25,7 +27,7 @@ const $ = <T extends HTMLElement = HTMLElement>(selector: string) => app.querySe
 const safe = (value: string) => value.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
 const message = (value: string) => { const element = app.querySelector<HTMLElement>('#notice'); if (element) { element.textContent = value; element.hidden = !value; } };
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong. Please try again.';
-function cleanup() { generation++; followerSync?.destroy(); followerSync = undefined; publisher?.stop(); publisher = undefined; scrollbar?.destroy(); scrollbar = undefined; viewer?.destroy(); viewer = undefined; service.leave(); room = undefined; ready = false; lastSequence = -1; lastPublished = ''; }
+function cleanup() { generation++; closeSettings?.(); closeSettings = undefined; followerSync?.destroy(); followerSync = undefined; publisher?.stop(); publisher = undefined; scrollbar?.destroy(); scrollbar = undefined; viewer?.destroy(); viewer = undefined; service.leave(); room = undefined; ready = false; lastSequence = -1; lastPublished = ''; }
 
 function home() {
   cleanup();
@@ -34,6 +36,8 @@ function home() {
     <section class="entry-card"><button id="create" class="primary">Create a room <span aria-hidden="true">↗</span></button><p class="hint">You’ll lead the session as Master</p><div class="divider"><span>or join your group</span></div><form id="join"><label for="code">Room code</label><div class="join-row"><input id="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="6-digit code" required autocomplete="off"/><button class="secondary" type="submit">Join room</button></div></form><p id="notice" class="notice" role="alert" hidden></p></section>
     <footer><span class="book-dot"></span><span>${safe(songbook.pdfTitle)} · ${safe(songbook.pdfVersion)}</span></footer>
     ${localServerConfigured ? '<aside class="demo-note"><strong>Local development</strong><br>Rooms are shared by this server. Join from another browser, or use your computer’s network address from a phone on the same Wi-Fi. Rooms reset when the server restarts.</aside>' : !cloudConfigured ? '<aside class="demo-note"><strong>Browser-only demo</strong><br>Open a second tab in this browser to try following. Set up Firebase to connect separate browsers or phones.</aside>' : '<p class="privacy">No account needed. Just bring your instrument.</p>'}</main>`;
+  const settingsButton = document.createElement('button'); settingsButton.className = 'secondary'; settingsButton.textContent = 'Settings'; settingsButton.id = 'settings'; $('.brand').append(settingsButton);
+  settingsButton.onclick = () => { history.pushState({}, '', '?settings=1'); route(); };
   $('#create').onclick = async () => {
     const button = $<HTMLButtonElement>('#create'); button.disabled = true; button.textContent = 'Creating room…'; message('');
     try { await service.init(); const code = await service.create(); history.pushState({}, '', `?room=${code}`); openRoom(code); }
@@ -180,5 +184,9 @@ async function openRoom(code: string) {
 }
 
 window.addEventListener('popstate', route);
-function route() { const code = new URLSearchParams(location.search).get('room'); if (code && validCode(code)) void openRoom(code); else home(); }
+function route() {
+  const params = new URLSearchParams(location.search);
+  if (params.get('settings') === '1') { cleanup(); closeSettings = showSettings(app, () => { history.pushState({}, '', '/'); home(); }); return; }
+  const code = params.get('room'); if (code && validCode(code)) void openRoom(code); else home();
+}
 route();

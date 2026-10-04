@@ -7,3 +7,4 @@ dist/
 firebase-debug*.log
 database-debug.log
 artifacts/
+.local-data/

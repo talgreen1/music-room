@@ -263,9 +263,22 @@ Release evidence for MR-044 through MR-046: user confirmed the final link, gestu
   - Acceptance: Follower navigation/sharing, vertical scrollbar, and old follow buttons are removed; interaction unchecks sync and returns to the latest Master state three seconds after interaction ends; further activity restarts the delay; manual opt-out persists until checked; cleanup prevents stale returns; Followers never publish room state.
   - Evidence: implemented on `feat/compact-view-and-auto-sync`. All 32 tests, type checking, and build pass, including timer restart, overlapping/held gestures, manual opt-out, immediate manual resume, and disposal. Separate-origin browser views verified temporary scrollbar browsing returning to the Master's newly selected page 37, manual opt-out remaining on page 73 after the Master moved to page 50, and rechecking immediately restoring page 50. Follower toolbar has no visible navigation buttons and starts with Master sync. Header/toolbar measured 45/41 pixels in the browser preview. Physical-phone gesture testing remains a manual follow-up.
 
-## Future backlog: not part of version 1
+## Settings and free PDF uploads
+
+- [x] **MR-049 - Add password-protected Settings and room management.** As a maintainer, I can open Settings from home, list rooms, delete a specific room, and delete all rooms after confirmation.
+  - Evidence: server-side password/session verification, login throttling, token-redacted room listing, targeted deletion and listener notification tested locally; bulk deletion tested against an isolated store. Separate Firebase admin identity and UID allowlist protect cloud operations. Production musician permission checks still pass after updating the rules.
+- [x] **MR-050 - Upload and view replacement PDFs locally.** As a maintainer, I can select a PDF file, upload it, view the default, and have new rooms use it while existing rooms retain their PDF.
+  - Evidence: integration check uploads/downloads the actual supplied PDF byte-for-byte, rejects invalid/unauthorized uploads, verifies new/existing room descriptors and restores the original default. Files and metadata persist on disk; size and header validation covered by unit tests.
+- [x] **MR-051 - Connect free hosted PDF uploads.** As a maintainer, I can use the same Settings upload flow with Firebase authentication and Supabase Free Storage.
+  - Acceptance: configure the bucket and Firebase integration, verify admin upload/public PDF rendering and denied musician uploads, and confirm the live default update flow. No billing upgrade or embedded service-role key.
+  - Evidence: Supabase Free project and bucket configured, Firebase integration active, administrator UID allowlisted; real PDF upload/download passed with denied musician uploads and overwrite. Cloud room listing, targeted deletion, default metadata update/readback and existing musician synchronization checks passed. Uploaded PDF rendered visibly in the app through a disposable cloud room; original default restored and preview room deleted. Chrome Settings login/list/form checked. All 37 tests, type checking and deployment build pass; administrator password absent from browser bundles. Automated file selection is limited by the browser extension file-access setting; physical-phone selection remains a manual release check.
+- [ ] **MR-052 - Release Settings.** As a musician/maintainer, I can use the tested Settings release on the live app.
+  - Acceptance: user tests pass, release branch committed/pushed/merged and Hosting deployed; physical-phone file selection checked.
+  - Progress: Hosting deployed on 2026-10-04. Live home Settings button and login with the updated password verified; room list and PDF upload controls load successfully. Git publication/merge and physical-phone file selection remain outstanding.
 
 Release evidence for MR-048: user confirmed the final compact controls, Follower sync, and Master-only scrollbar changes work on 2026-10-03. All 32 tests and the guarded deployment build passed, as did rendering actual PDF pages with newer built-ins initially absent. Frontend deployed to https://talgreen-music-room.web.app. Specific iPhone/rotation coverage remains tracked separately.
+
+## Future backlog: not part of version 1
 
 - [ ] **F-001 - Add a built-in song index.** As a musician, I can choose a song name to navigate to its page. Acceptance when scoped: versioned mapping agrees with the current PDF, including index-page offsets.
 - [ ] **F-002 - Add favorites.** As a musician, I can save favorite songs locally. Acceptance when scoped: favorites use stable source/song IDs and handle PDF version changes.
@@ -274,7 +287,7 @@ Release evidence for MR-048: user confirmed the final compact controls, Follower
 - [ ] **F-005 - Add a browser-like source view.** As a Master, I can select supported external content. Acceptance when scoped: source-specific navigation and sync boundaries are explicit; do not assume arbitrary iframe access.
 - [ ] **F-006 - Add WebRTC screen sharing.** As a Master, I can explicitly share a supported screen source. Acceptance when scoped: browser capture support, user consent, signaling, bandwidth, and separate media lifecycle verified.
 - [ ] **F-007 - Add transposition for structured chords.** As a musician, I can change a supported song's key. Acceptance when scoped: structured chord source and correct chord/key behavior; do not claim transposition of arbitrary PDF images.
-- [ ] **F-008 - Add admin PDF management if needed.** As a maintainer, I can publish a book through an authorized admin flow. Acceptance when scoped: admin-only access, versioning, validation, and active-room compatibility.
+- [x] **F-008 - Scope admin PDF management.** Promoted to MR-049 through MR-052 above; remaining cloud and release work stays unchecked there.
 - [ ] **F-009 - Add stronger invitations and abuse controls if needed.** As an organizer, I can open the service to a broader audience. Acceptance when scoped: defined threat model, stronger join authorization, room-creation limits, and verified enforcement beyond client UI.
 
 ## Verification approach
