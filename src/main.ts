@@ -7,6 +7,8 @@ import { PositionPublisher } from './sync';
 import { PdfScrollbar } from './scrollbar';
 import { FollowerSync } from './follower-sync';
 import { showSettings } from './settings';
+import { showSongLibrary } from './song-dialog';
+import { showSheetDialog } from './sheet-dialog';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const service = new RoomService();
@@ -14,6 +16,7 @@ let viewer: SongbookViewer | undefined;
 let scrollbar: PdfScrollbar | undefined;
 let publisher: PositionPublisher | undefined;
 let followerSync: FollowerSync | undefined;
+let closeSheet: (() => void) | undefined;
 let closeSettings: (() => void) | undefined;
 let room: Room | undefined;
 let master = false;
@@ -27,7 +30,7 @@ const $ = <T extends HTMLElement = HTMLElement>(selector: string) => app.querySe
 const safe = (value: string) => value.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
 const message = (value: string) => { const element = app.querySelector<HTMLElement>('#notice'); if (element) { element.textContent = value; element.hidden = !value; } };
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong. Please try again.';
-function cleanup() { generation++; closeSettings?.(); closeSettings = undefined; followerSync?.destroy(); followerSync = undefined; publisher?.stop(); publisher = undefined; scrollbar?.destroy(); scrollbar = undefined; viewer?.destroy(); viewer = undefined; service.leave(); room = undefined; ready = false; lastSequence = -1; lastPublished = ''; }
+function cleanup() { generation++; closeSheet?.(); closeSheet = undefined; closeSettings?.(); closeSettings = undefined; followerSync?.destroy(); followerSync = undefined; publisher?.stop(); publisher = undefined; scrollbar?.destroy(); scrollbar = undefined; viewer?.destroy(); viewer = undefined; service.leave(); room = undefined; ready = false; lastSequence = -1; lastPublished = ''; }
 
 function home() {
   cleanup();
@@ -92,17 +95,26 @@ async function openRoom(code: string) {
   orientation.append(rtl, document.createTextNode('RTL'));
   $('.toolbar').append(orientation);
   rtl.onchange = () => { if (master && ready) viewer?.setRtl(rtl.checked); };
+  let loadedSource = '', loadingSource = '', sourceRevision = 0;
+  const publishPosition = (position: import('./model').Position, immediate = false) => publisher?.push({ ...position, sourceId: loadedSource }, immediate);
+  const screenshots = document.createElement('button'); screenshots.className = 'secondary source-button'; screenshots.textContent = 'Screenshots';
+  const songsButton = document.createElement('button'); songsButton.className = 'secondary source-button'; songsButton.textContent = 'Songs';
+  songsButton.onclick = () => { closeSheet?.(); closeSheet = showSongLibrary(service, room?.pdfTitle || 'Songbook'); };
+  const pdfButton = document.createElement('button'); pdfButton.className = 'secondary source-button'; pdfButton.textContent = 'PDF';
+  $('.toolbar').append(screenshots, songsButton, pdfButton);
+  screenshots.onclick = () => { closeSheet?.(); closeSheet = showSheetDialog(service); };
+  pdfButton.onclick = async () => { pdfButton.disabled = true; try { await service.changeSheet(); } catch (error) { message(errorText(error)); } finally { if (token === generation) updateFollow(); } };
   publisher = new PositionPublisher(position => service.publish(position), error => message(errorText(error)));
-  viewer.onPage = page => { $<HTMLInputElement>('#page').value = String(page); followerPage.textContent = `Page ${page} / ${viewer?.count || '…'}`; };
+  viewer.onPage = page => { $<HTMLInputElement>('#page').value = String(page); followerPage.textContent = room?.sheet ? room.sheet.title : `Page ${page} / ${viewer?.count || '…'}`; };
   viewer.onPosition = position => {
     scrollbar?.refresh();
     $('#zoom').textContent = `${Math.round(position.zoom * 100)}%`;
     if (!master || !ready || connection !== 'Connected') return;
     const key = `${position.page}:${position.offset.toFixed(4)}:${(position.horizontal || 0).toFixed(4)}:${position.zoom}`;
-    if (key !== lastPublished) { lastPublished = key; publisher?.push(position); }
+    if (key !== lastPublished) { lastPublished = key; publishPosition(position); }
   };
   const independent = () => master || !following;
-  const jump = (page: number) => { if (independent() && ready && Number.isFinite(page)) { viewer?.jump(page); const p = viewer?.position(); if (master && p) publisher?.push(p, true); } };
+  const jump = (page: number) => { if (independent() && ready && Number.isFinite(page)) { viewer?.jump(page); const p = viewer?.position(); if (master && p) publishPosition(p, true); } };
   firstPage.onclick = () => jump(1);
   $('#previous').onclick = () => jump(Number($<HTMLInputElement>('#page').value) - 1);
   $('#next').onclick = () => jump(Number($<HTMLInputElement>('#page').value) + 1);
@@ -120,7 +132,11 @@ async function openRoom(code: string) {
     $('#pdf').classList.toggle('following', !master && following);
     for (const selector of ['#first-page', '#previous', '#next', '#page', '#zoom-out', '#zoom-in']) ($<HTMLButtonElement | HTMLInputElement>(selector)).disabled = !ready || !independent();
     for (const selector of ['#first-page', '#previous', '#next', '#zoom-out', '#zoom-in', '.toolbar-divider']) $(selector).hidden = !master;
-    $('#page-form').hidden = !master;
+    $('#page-form').hidden = !master || Boolean(room?.sheet);
+    for (const selector of ['#previous', '#next']) $(selector).hidden = !master || Boolean(room?.sheet);
+    songsButton.hidden = !master; songsButton.disabled = !ready || connection !== 'Connected';
+    screenshots.hidden = !master; screenshots.disabled = !ready || connection !== 'Connected';
+    pdfButton.hidden = !master || !room?.sheet; pdfButton.disabled = !ready || connection !== 'Connected';
     $('#follower-page').hidden = master;
   }
   updateFollow();
@@ -156,15 +172,20 @@ async function openRoom(code: string) {
     if ((next.position.sequence || 0) < lastSequence) return;
     const first = !room; const previous = room?.position; room = next; master = service.isMaster(next);
     $('#role').textContent = master ? 'You are the Master' : 'Follower';
-    if (first) {
+    const source = next.sheet?.id || 'pdf';
+    if (first || (loadingSource ? source !== loadingSource : source !== loadedSource)) {
+      const revision = ++sourceRevision; loadingSource = source; ready = false; lastPublished = '';
+      publisher?.stop(); publisher = undefined; updateFollow();
       recovery.hidden = true; pdfFrame.hidden = false; $('.toolbar').hidden = false;
       $<HTMLButtonElement>('#share').disabled = false;
       try {
-        await viewer!.load(next.pdfUrl);
-        if (token !== generation) return;
+        if (next.sheet) await viewer!.loadSheet(next.sheet); else await viewer!.load(next.pdfUrl);
+        if (token !== generation || revision !== sourceRevision) return;
+        loadedSource = source; loadingSource = '';
+        publisher = new PositionPublisher(position => service.publish(position), error => message(errorText(error)));
         ready = true; $('#count').textContent = ` / ${viewer!.count}`; $<HTMLInputElement>('#page').max = String(viewer!.count);
         viewer!.follow(room!.position, true); updateFollow();
-      } catch (error) { unavailable('Could not open the songbook', `${errorText(error)} Try again, or return home to join another room.`); }
+      } catch (error) { if (token !== generation || revision !== sourceRevision) return; unavailable('Could not open the songbook', `${errorText(error)} Try again, or return home to join another room.`); }
     } else if (ready && !master && following && (next.position.sequence || 0) >= lastSequence) {
       viewer!.follow(next.position, Boolean(previous && Math.abs(previous.page - next.position.page) > 1));
     }
@@ -173,9 +194,10 @@ async function openRoom(code: string) {
   function status(value: Connection) {
     if (token !== generation) return;
     const reconnected = connection !== 'Connected' && value === 'Connected'; connection = value;
+    updateFollow();
     $('#connection').textContent = value; $('#connection').classList.toggle('online', value === 'Connected');
     if (reconnected && ready) {
-      if (master) { const p = viewer?.position(); if (p) publisher?.push(p, true); }
+      if (master) { const p = viewer?.position(); if (p) publishPosition(p, true); }
       else if (following && room) viewer?.follow(room.position, true);
     }
   }

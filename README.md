@@ -1,6 +1,6 @@
 # Music Room
 
-A mobile browser songbook: one Master controls the reading position and Followers follow or browse independently. The supplied 145-page PDF is included as a versioned static asset.
+A mobile browser songbook: one Master controls the reading position and Followers follow or browse independently. Share the supplied 145-page PDF or automatically stitched screenshots saved in a reusable song library.
 
 Live app: **https://talgreen-music-room.web.app**. Create a room there and share its link/code with another browser or phone; joining makes that participant a Follower. Local development also has a shared server backend for separate browsers and devices. Cloud authorization and live SDK updates have been verified; physical Android/iPhone and network-loss testing remain outstanding in [DETAILED_PLAN.md](DETAILED_PLAN.md). Architecture is in [HIGH_LEVEL_DESIGN.md](HIGH_LEVEL_DESIGN.md).
 
@@ -17,14 +17,25 @@ music-room/
 │   ├── gestures.ts          # PDF-only pointer drag, pinch, and trackpad zoom
 │   ├── scrollbar.ts         # Persistent touch/mouse scrollbar and keyboard scrolling
 │   ├── pdf-links.ts         # Internal PDF destination/page coordinate resolution
-│   ├── viewer.ts            # PDF.js loading, rendering, zoom, and smooth following
+│   ├── viewer.ts            # PDF and screenshot rendering, zoom, and smooth following
+│   ├── stitch.ts            # Screenshot overlap and stationary-bar matching
+│   ├── screenshot-import.ts # Image decoding, cropping and bounded JPEG export
+│   ├── sheet-dialog.ts      # Import, stitch preview and upload dialog
+│   ├── song-dialog.ts       # Saved song chooser and zoom/pan preview
+│   ├── song-library.ts      # Saved-song metadata and lifecycle helpers
+│   ├── sheets.ts            # Image manifest and upload validation
 │   ├── style.css            # Dark interface and responsive layouts
 │   └── *.test.ts            # Model, publisher, and local room store tests
 ├── server/
-│   └── local-rooms.ts       # Vite development middleware: room API and SSE streams
+│   ├── local-rooms.ts       # Vite development middleware: room API and SSE streams
+│   └── song-library.ts      # Persistent local catalog and image cleanup
 ├── scripts/
 │   ├── test-local-server.mjs # Integration check against a running development server
-│   └── test-cloud-rooms.mjs  # Integration check with distinct Firebase identities
+│   ├── test-cloud-rooms.mjs  # Integration check with distinct Firebase identities
+│   └── test-cloud-sheets.mjs # Disposable cloud upload/library/security checks
+├── supabase/
+│   ├── storage.sql          # PDF bucket and administrator upload policy
+│   └── sheets.sql           # Screenshot bucket, upload and cleanup policies
 ├── public/songbooks/        # Versioned PDFs copied into each build
 ├── index.html               # Browser entry point
 ├── vite.config.ts           # Development server and deployment configuration guard
@@ -45,7 +56,7 @@ The original supplied PDF remains at the repository root. Its published copy is 
 
 ## Architecture
 
-The frontend is a TypeScript application built with Vite. PDF.js runs in each participant's browser using a separate worker. The viewer and worker use matching PDF.js compatibility (`legacy`) bundles so rendering does not depend on newer built-ins missing from some mobile browsers. Firebase Hosting serves the frontend, worker, and bundled PDF. Supabase Storage hosts PDF replacements uploaded through Settings. Firebase Authentication supplies invisible anonymous identities for musicians and a separate password account for Settings; Realtime Database stores rooms and the current songbook descriptor.
+The frontend is a TypeScript application built with Vite. PDF.js runs in each participant's browser using a separate worker. The viewer and worker use matching PDF.js compatibility (`legacy`) bundles so rendering does not depend on newer built-ins missing from some mobile browsers. Firebase Hosting serves the frontend, worker, and bundled PDF. Supabase Storage hosts PDF replacements and screenshot tiles. Firebase Authentication supplies invisible anonymous identities for musicians and a separate password account for Settings; Realtime Database stores rooms, the current songbook descriptor and the reusable song catalog.
 
 ```mermaid
 flowchart LR
@@ -335,3 +346,27 @@ Supabase's Free plan has storage/download limits and projects can pause after in
 - Compact Follower controls show Master sync and page/zoom readouts; navigation, zoom buttons, RTL, and sharing controls are shown only for the Master.
 
 Realtime traffic contains only page, normalized vertical offset, normalized horizontal travel, relative zoom, sequence, and timestamp. PDF pages render locally and nearby canvases are retained rather than rendering all pages simultaneously.
+
+## Share chord screenshots
+
+In a room, the Master taps **Screenshots** in the bottom toolbar, selects captures from top to bottom, optionally enters a song name, and reviews the automatically stitched preview. Capture at the same browser zoom with about one third of each screen overlapping the next. Set the desired transposition on the website first. Use the arrow buttons to reorder captures; **Auto stitch** recalculates joins. Expand **Adjust crop / Review join** to remove top or bottom pixels, then **Update preview**. **Share with room** uploads and permanently saves the song before switching everyone to it. An empty song name uses the first screenshot filename. **Songs** opens the reusable library, with the pinned PDF listed first; select any saved song to share it without uploading again. Pinch, pan and Master sync work as for the PDF. The **PDF** button returns everyone to the pinned songbook at page 1.
+
+Screenshots are static: website links/transposition controls are not interactive. Changing key requires new screenshots. Uncertain overlap matches are preserved and flagged for review rather than silently removing content.
+
+The stitching modules are `src/stitch.ts`, `src/screenshot-import.ts`, `src/sheet-dialog.ts` and `src/sheets.ts`. `src/song-library.ts` defines saved metadata/filtering, `src/song-dialog.ts` provides selection/preview, and `server/song-library.ts` persists the local catalog using serialized atomic writes. `src/viewer.ts` displays short JPEG tiles without gaps; `src/rooms.ts` publishes their manifest and source-tagged position together. Processing uses bounded canvases instead of allocating one enormous image. Limits: 20 captures / 100 MB input, 20 megapixels per capture, 1600-pixel output width, up to 40 JPEG tiles / 30 MB total. Settings previews reuse the zoom/pan viewer. **Settings > Saved songs > Add song** opens the same screenshot importer, with optional name, automatic stitching and crop preview; **Save song** adds it directly to the library without creating a room or changing any room's current view. Run `node scripts/test-settings.mjs` against the local server to check library registration, cross-room reuse, protected deletion, active-copy retention and tile cleanup.
+
+### Local testing
+
+Run `npm run dev`, create a room and upload screenshots. Open its link from another browser or a phone on the same Wi-Fi using the network address printed by Vite, for example `http://YOUR-COMPUTER-IP:5173/?room=123456`. Uploaded JPEGs persist in ignored `.local-data/sheets/`; the reusable catalog persists in `.local-data/songs.json` across server restarts. Rooms still reset on server restart. Verify zoom, horizontal/vertical dragging, Follower's three-second return, manual Master sync opt-out, late joining, and returning to PDF. `node scripts/test-local-server.mjs` checks HTTP authorization, sheet switching, stale positions and reconnect snapshots.
+
+### Cloud setup for this extension
+
+Screenshot sharing and the song library are deployed at the live app. For another installation, or changes to these policies:
+
+1. Run [supabase/sheets.sql](supabase/sheets.sql) in the existing project's SQL editor. Adjust the Firebase project ID for other installations. It creates the public `room-sheets` bucket and an insert-only Firebase-token policy scoped to the uploader's UID. Firebase third-party Auth and the two public Supabase environment settings are the same as for Settings PDF uploads.
+2. Validate and deploy the updated `database.rules.json` before publishing the frontend. The rules permit only the Master to change the source/position and require matching source IDs. Run `node --use-system-ca scripts/test-cloud-sheets.mjs` to verify real uploads/downloads, Master and room-free Settings imports, Follower denial, reconnect, tombstones and administrator cleanup. It uses `MUSIC_ADMIN_PASSWORD` from the local environment and removes only its own disposable rooms, catalog entries and JPEGs. Do not put that password in a `VITE_*` variable.
+3. Run `npm run build:deploy`, then publish Hosting using the existing deployment process. Refresh all devices after release; older frontend clients do not support image sheets.
+
+No extra service or billing upgrade is introduced. Uploaded sheets consume the existing free Storage and download allowances. Saved songs remain available until deleted in **Settings > Saved songs**, which lists every song and offers **View** and **Delete**. Deletion hides the library entry immediately. Active rooms retain their current copy. On Settings refresh or room deletion, unused deleted songs have their tiles and metadata removed; this avoids interrupting active players while reclaiming storage. Cloud tombstones live under `/songs/<id>/deletedAt`; only the Settings administrator can delete/clean up, and room rules prevent selecting tombstoned songs. Apply the SELECT/DELETE administrator policies in `supabase/sheets.sql` as well as its upload policy. Adjust the Firebase project, administrator UID and Supabase public URL in the SQL/rules for other installations. Failed upload attempts can also leave unused files. Saved local files use the same deletion lifecycle; avoid clearing `.local-data/` if you want to retain the library.
+
+Release verified on 2026-10-05: 52 unit tests, type checking, PDF compatibility rendering, local HTTP integration and real-cloud screenshot/PDF room checks passed. Storage SQL and database rules were applied before Firebase Hosting publication. The user approved local testing. Detailed physical Android/iPhone seam, memory and background behavior checks remain tracked in the plan.

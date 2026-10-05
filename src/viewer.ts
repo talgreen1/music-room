@@ -5,9 +5,11 @@ import worker from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import { clampZoom, horizontalOffset, horizontalLeft, locatePosition, positionTop, type Position } from './model';
 import { PdfGestures, type Point } from './gestures';
 import { resolvePdfLink } from './pdf-links';
+import { validateSheet, type ImageSheet } from './sheets';
 GlobalWorkerOptions.workerSrc = worker;
 export class SongbookViewer {
   private pdf?: PDFDocumentProxy;
+  private sheet?: ImageSheet;
   private loading?: PDFDocumentLoadingTask;
   private destroyed = false;
   private pages: HTMLDivElement[] = [];
@@ -25,6 +27,7 @@ export class SongbookViewer {
   private gestures: PdfGestures;
   private events = new AbortController();
   private generation = 0;
+  private sourceRevision = 0;
   private resizeObserver: ResizeObserver;
   onPosition?: (position: Position) => void;
   onPage?: (page: number) => void;
@@ -34,7 +37,7 @@ export class SongbookViewer {
   constructor(private host: HTMLElement) {
     host.addEventListener('scroll', () => this.emitPosition(), { passive: true, signal: this.events.signal });
     this.gestures = new PdfGestures(host, {
-      locked: () => host.classList.contains('locked') || !this.pdf,
+      locked: () => host.classList.contains('locked') || (!this.pdf && !this.sheet),
       start: () => { this.onInteractionStart?.(); this.cancelFollow(); },
       end: () => { this.emitPosition(); this.onInteractionEnd?.(); },
       pan: (dx, dy) => { host.scrollLeft += dx; host.scrollTop += dy; this.emitPosition(); },
@@ -49,7 +52,7 @@ export class SongbookViewer {
       this.onInteractionStart?.(); this.cancelFollow(); this.onInteractionEnd?.();
     }, { signal: this.events.signal });
     this.resizeObserver = new ResizeObserver(() => {
-      if (this.pdf) {
+      if (this.pdf || this.sheet) {
         // A following viewer must retain the Master's coordinates through resize,
         // rather than reinterpret old scroll pixels using its new viewport width.
         const position = host.classList.contains('following') ? this.sharedPosition || this.position() : this.position();
@@ -58,27 +61,51 @@ export class SongbookViewer {
     });
     this.resizeObserver.observe(host);
   }
-  get count() { return this.pdf?.numPages || 0; }
+  get count() { return this.sheet?.segments.length || this.pdf?.numPages || 0; }
+  private resetSource() {
+    this.sourceRevision++; this.cancelFollow(); this.observer?.disconnect(); this.observer = undefined;
+    clearTimeout(this.renderTimer); this.generation++; this.tasks.forEach(task => task.cancel()); this.tasks.clear();
+    this.visible.clear(); this.links.clear(); this.pages = []; this.ratios = []; this.sheet = undefined; this.pdf = undefined;
+    void this.loading?.destroy(); this.loading = undefined;
+    this.zoom = 1; this.host.classList.remove('image-sheet'); this.host.innerHTML = '';
+  }
+  async loadSheet(value: ImageSheet) {
+    this.resetSource(); this.sheet = validateSheet(value); this.host.classList.add('image-sheet');
+    this.sheet.segments.forEach((segment, index) => {
+      const element = document.createElement('div'); element.className = 'pdf-page'; element.dataset.page = String(index + 1);
+      element.setAttribute('aria-label', `Screenshot segment ${index + 1}`);
+      this.pages.push(element); this.ratios.push(segment.height / segment.width); this.host.append(element);
+    });
+    this.layout(); this.observePages();
+  }
   async load(url: string) {
+    this.resetSource();
+    const revision = this.sourceRevision;
     this.host.innerHTML = '<div class="viewer-message">Opening your songbook…</div>';
     this.loading = getDocument({ url });
-    this.pdf = await this.loading.promise;
-    if (this.destroyed) return;
+    const pdf = await this.loading.promise;
+    if (this.destroyed || revision !== this.sourceRevision) return;
+    this.pdf = pdf;
     this.host.innerHTML = ''; this.pages = []; this.ratios = [];
     for (let n = 1; n <= this.pdf.numPages; n++) {
-      const page = await this.pdf.getPage(n); const viewport = page.getViewport({ scale: 1 });
-      if (this.destroyed) return;
+      const page = await pdf.getPage(n); const viewport = page.getViewport({ scale: 1 });
+      if (this.destroyed || revision !== this.sourceRevision) return;
       const element = document.createElement('div'); element.className = 'pdf-page'; element.dataset.page = String(n);
       element.setAttribute('aria-label', `Songbook page ${n}`);
       element.innerHTML = `<span class="page-placeholder">${n}</span>`;
       this.ratios.push(viewport.height / viewport.width); this.pages.push(element); this.host.append(element);
     }
     this.layout();
+    this.observePages();
+  }
+  private observePages() {
+    const revision = this.sourceRevision;
     this.observer = new IntersectionObserver(entries => {
+      if (this.destroyed || revision !== this.sourceRevision) return;
       for (const entry of entries) {
         const index = Number((entry.target as HTMLElement).dataset.page) - 1;
         if (entry.isIntersecting) { this.visible.add(index); void this.render(index); }
-        else { this.visible.delete(index); this.tasks.get(index)?.cancel(); this.pages[index].querySelector('canvas')?.remove(); }
+        else { this.visible.delete(index); this.tasks.get(index)?.cancel(); this.pages[index].querySelector('canvas, img')?.remove(); }
       }
     }, { root: this.host, rootMargin: '700px' });
     this.pages.forEach(page => this.observer!.observe(page));
@@ -97,6 +124,14 @@ export class SongbookViewer {
     }, 120);
   }
   private async render(index: number) {
+    if (this.sheet) {
+      const element = this.pages[index];
+      if (element.querySelector('img')) return;
+      const image = document.createElement('img'); image.alt = ''; image.draggable = false; image.decoding = 'async';
+      image.src = this.sheet.segments[index].url;
+      image.onerror = () => { image.remove(); if (!this.destroyed && this.visible.has(index)) { element.textContent = 'Image unavailable. Tap to retry.'; element.onclick = () => { element.textContent = ''; void this.render(index); }; } };
+      element.append(image); return;
+    }
     // Link regions use percentage coordinates, so they survive canvas refreshes
     // and remain aligned while pinch zoom temporarily scales an existing canvas.
     if (!this.links.has(index)) this.links.set(index, this.addLinks(index));
@@ -131,9 +166,10 @@ export class SongbookViewer {
   private async addLinks(index: number) {
     try {
       if (!this.pdf) return;
+      const revision = this.sourceRevision;
       const page = await this.pdf.getPage(index + 1);
       const annotations = await page.getAnnotations({ intent: 'display' });
-      if (this.destroyed) return;
+      if (this.destroyed || revision !== this.sourceRevision) return;
       const viewport = page.getViewport({ scale: 1 });
       const layer = document.createElement('div'); layer.className = 'pdf-links';
       for (const annotation of annotations) {

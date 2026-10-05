@@ -2,15 +2,26 @@
   "rules": {
     ".read": false,
     ".write": false,
-    "admins": { ".read": false, ".write": false },
+    "admins": {
+      ".read": false,
+      ".write": false
+    },
     "songbook": {
       ".read": "auth != null",
       ".write": "auth != null && root.child('admins').child(auth.uid).val() === true && newData.exists()",
       ".validate": "newData.hasChildren(['pdfUrl','pdfVersion','pdfTitle'])",
-      "pdfUrl": { ".validate": "newData.isString() && newData.val().length <= 2048 && (newData.val().beginsWith('https://') || (newData.val().beginsWith('/') && !newData.val().beginsWith('//')))" },
-      "pdfVersion": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 100" },
-      "pdfTitle": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200" },
-      "$other": { ".validate": false }
+      "pdfUrl": {
+        ".validate": "newData.isString() && newData.val().length <= 2048 && (newData.val().beginsWith('https://') || (newData.val().beginsWith('/') && !newData.val().beginsWith('//')))"
+      },
+      "pdfVersion": {
+        ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 100"
+      },
+      "pdfTitle": {
+        ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200"
+      },
+      "$other": {
+        ".validate": false
+      }
     },
     "rooms": {
       ".read": "auth != null && root.child('admins').child(auth.uid).val() === true",
@@ -18,25 +29,133 @@
       "$code": {
         ".read": "auth != null && $code.matches(/^[0-9]{6}$/) && (!data.exists() || data.child('expiresAt').val() > now)",
         ".write": "auth != null && $code.matches(/^[0-9]{6}$/) && ((!data.exists() && newData.child('masterId').val() === auth.uid) || (root.child('admins').child(auth.uid).val() === true && !newData.exists()))",
-        ".validate": "newData.hasChildren(['masterId','createdAt','expiresAt','pdfUrl','pdfVersion','pdfTitle','position'])",
-        "masterId": { ".validate": "newData.isString() && ((!data.exists() && newData.val() === auth.uid) || newData.val() === data.val())" },
-        "createdAt": { ".validate": "newData.isNumber() && ((!data.exists() && newData.val() >= now - 60000 && newData.val() <= now + 60000) || newData.val() === data.val())" },
-        "expiresAt": { ".validate": "newData.isNumber() && ((!data.exists() && newData.val() === newData.parent().child('createdAt').val() + 86400000) || newData.val() === data.val())" },
-        "pdfUrl": { ".validate": "newData.isString() && newData.val().length <= 2048 && (!data.exists() || newData.val() === data.val())" },
-        "pdfVersion": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 100 && (!data.exists() || newData.val() === data.val())" },
-        "pdfTitle": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200 && (!data.exists() || newData.val() === data.val())" },
+        ".validate": "newData.hasChildren(['masterId','createdAt','expiresAt','pdfUrl','pdfVersion','pdfTitle','position']) && ((newData.child('sheet').exists() && newData.child('position/sourceId').val() === newData.child('sheet/id').val()) || (!newData.child('sheet').exists() && (!newData.child('position/sourceId').exists() || newData.child('position/sourceId').val() === 'pdf')))",
+        "masterId": {
+          ".validate": "newData.isString() && ((!data.exists() && newData.val() === auth.uid) || newData.val() === data.val())"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber() && ((!data.exists() && newData.val() >= now - 60000 && newData.val() <= now + 60000) || newData.val() === data.val())"
+        },
+        "expiresAt": {
+          ".validate": "newData.isNumber() && ((!data.exists() && newData.val() === newData.parent().child('createdAt').val() + 86400000) || newData.val() === data.val())"
+        },
+        "pdfUrl": {
+          ".validate": "newData.isString() && newData.val().length <= 2048 && (!data.exists() || newData.val() === data.val())"
+        },
+        "pdfVersion": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 100 && (!data.exists() || newData.val() === data.val())"
+        },
+        "pdfTitle": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200 && (!data.exists() || newData.val() === data.val())"
+        },
         "position": {
           ".write": "auth != null && data.parent().child('masterId').val() === auth.uid && data.parent().child('expiresAt').val() > now && newData.exists()",
-          ".validate": "newData.hasChildren(['page','offset','zoom','sequence','updatedAt'])",
-          "page": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 10000 && newData.val() % 1 === 0" },
-          "offset": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
-          "zoom": { ".validate": "newData.isNumber() && newData.val() >= 0.75 && newData.val() <= 4" },
-          "horizontal": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
-          "sequence": { ".validate": "newData.isNumber() && newData.val() % 1 === 0 && ((!data.exists() && newData.val() === 0) || newData.val() > data.val())" },
-          "updatedAt": { ".validate": "newData.isNumber() && newData.val() >= now - 60000 && newData.val() <= now + 60000" },
-          "$other": { ".validate": false }
+          ".validate": "newData.hasChildren(['page','offset','zoom','sequence','updatedAt']) && ((newData.parent().child('sheet').exists() && newData.child('sourceId').val() === newData.parent().child('sheet/id').val()) || (!newData.parent().child('sheet').exists() && (!newData.child('sourceId').exists() || newData.child('sourceId').val() === 'pdf')))",
+          "sourceId": {
+            ".validate": "newData.isString() && (newData.val() === 'pdf' || newData.val().matches(/^[a-f0-9]{32}$/))"
+          },
+          "page": {
+            ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 10000 && newData.val() % 1 === 0"
+          },
+          "offset": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1"
+          },
+          "zoom": {
+            ".validate": "newData.isNumber() && newData.val() >= 0.75 && newData.val() <= 4"
+          },
+          "horizontal": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1"
+          },
+          "sequence": {
+            ".validate": "newData.isNumber() && newData.val() % 1 === 0 && ((!data.exists() && newData.val() === 0) || newData.val() > data.val())"
+          },
+          "updatedAt": {
+            ".validate": "newData.isNumber() && newData.val() >= now - 60000 && newData.val() <= now + 60000"
+          },
+          "$other": {
+            ".validate": false
+          }
         },
-        "$other": { ".validate": false }
+        "sheet": {
+          ".write": "auth != null && data.parent().child('masterId').val() === auth.uid && data.parent().child('expiresAt').val() > now",
+          ".validate": "newData.hasChildren(['id','title','segments']) && newData.parent().child('position/sourceId').val() === newData.child('id').val() && root.child('songs').child(newData.child('id').val()).exists() && !root.child('songs').child(newData.child('id').val()).child('deletedAt').exists()",
+          "id": {
+            ".validate": "newData.isString() && newData.val().matches(/^[a-f0-9]{32}$/)"
+          },
+          "title": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120"
+          },
+          "segments": {
+            ".validate": "newData.hasChild('0')",
+            "$index": {
+              ".validate": "$index.matches(/^([0-9]|[1-3][0-9])$/) && newData.hasChildren(['url','width','height'])",
+              "url": {
+                ".validate": "newData.isString() && newData.val().length <= 2048 && (newData.val().beginsWith('https://') || (newData.val().beginsWith('/') && !newData.val().beginsWith('//')))"
+              },
+              "width": {
+                ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 1 && newData.val() <= 1600"
+              },
+              "height": {
+                ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 1 && newData.val() <= 2048"
+              },
+              "$other": {
+                ".validate": false
+              }
+            }
+          },
+          "$other": {
+            ".validate": false
+          }
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "songs": {
+      ".read": "auth != null",
+      "$id": {
+        ".write": "auth != null && ((root.child('admins').child(auth.uid).val() === true) || (!data.exists() && newData.exists() && newData.child('ownerId').val() === auth.uid && newData.child('roomCode').isString() && root.child('rooms').child(newData.child('roomCode').val()).child('masterId').val() === auth.uid && root.child('rooms').child(newData.child('roomCode').val()).child('expiresAt').val() > now))",
+        ".validate": "$id.matches(/^[a-f0-9]{32}$/) && newData.hasChildren(['id','title','segments','ownerId','createdAt']) && newData.child('id').val() === $id",
+        "id": {
+          ".validate": "newData.isString() && newData.val().matches(/^[a-f0-9]{32}$/)"
+        },
+        "title": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120"
+        },
+        "segments": {
+          ".validate": "newData.hasChild('0')",
+          "$index": {
+            ".validate": "$index.matches(/^([0-9]|[1-3][0-9])$/) && newData.hasChildren(['url','width','height'])",
+            "url": {
+              ".validate": "newData.isString() && newData.val().length <= 2048 && newData.val().beginsWith('https://vsnrxzpigrrafdrmjugo.supabase.co/storage/v1/object/public/room-sheets/' + newData.parent().parent().parent().child('ownerId').val() + '/' + $id + '/')"
+            },
+            "width": {
+              ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 1 && newData.val() <= 1600"
+            },
+            "height": {
+              ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 1 && newData.val() <= 2048"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "$other": {
+          ".validate": false
+        },
+        "ownerId": {
+          ".validate": "newData.isString() && newData.val().length <= 128 && ((!data.exists() && newData.val() === auth.uid) || newData.val() === data.val())"
+        },
+        "roomCode": {
+          ".validate": "newData.isString() && newData.val().matches(/^[0-9]{6}$/) && (!data.exists() || newData.val() === data.val())"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber() && ((!data.exists() && newData.val() >= now - 60000 && newData.val() <= now + 60000) || newData.val() === data.val())"
+        },
+        "deletedAt": {
+          ".validate": "auth != null && root.child('admins').child(auth.uid).val() === true && newData.isNumber() && newData.val() >= now - 60000 && newData.val() <= now + 60000"
+        }
       }
     }
   }

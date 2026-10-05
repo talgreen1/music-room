@@ -1,6 +1,8 @@
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, signInAnonymously, connectAuthEmulator } from 'firebase/auth';
-import { getDatabase, ref, get, onValue, runTransaction, set, serverTimestamp, connectDatabaseEmulator, type Database } from 'firebase/database';
+import { getDatabase, ref, get, onValue, runTransaction, set, update, serverTimestamp, connectDatabaseEmulator, type Database } from 'firebase/database';
+import { availableSongs, type SavedSong } from './song-library';
+import { validateSheet, type ImageSheet } from './sheets';
 import { roomCode, normalizePosition, type Room, type Position } from './model';
 import { validateSongbook } from './songbook';
 const env = import.meta.env;
@@ -19,6 +21,7 @@ export class RoomService {
   private master = false;
   private connected = false;
   private sequence = 0;
+  private sourceId = 'pdf';
   private serverOffset = 0;
   private initialized = false;
   private onRoom?: (room: Room | null) => void;
@@ -85,6 +88,7 @@ export class RoomService {
     this.master = sessionStorage.getItem(`music-master:${code}`) === '1';
     let expiresAt = Infinity;
     const accept = (room: Room | null) => {
+      this.sourceId = room?.sheet?.id || 'pdf';
       expiresAt = room?.expiresAt || Infinity;
       this.sequence = Math.max(this.sequence, room?.position.sequence || 0);
       if (room?.masterId !== this.uid) this.master = false;
@@ -143,7 +147,8 @@ export class RoomService {
   isMaster(room: Room) { return this.master && room.masterId === this.uid; }
   async publish(position: Position) {
     if (!this.master || !this.code || !this.connected || !navigator.onLine) return;
-    const value = { ...normalizePosition(position), sequence: ++this.sequence, updatedAt: Date.now() + this.serverOffset };
+    if (position.sourceId && position.sourceId !== this.sourceId) return;
+    const value = { ...normalizePosition(position), sourceId: position.sourceId || this.sourceId, sequence: ++this.sequence, updatedAt: Date.now() + this.serverOffset };
     if (this.db) await set(ref(this.db, `rooms/${this.code}/position`), { ...value, updatedAt: serverTimestamp() });
     else if (localServerConfigured) {
       const token = sessionStorage.getItem(`music-master-token:${this.code}`);
@@ -158,6 +163,56 @@ export class RoomService {
       localStorage.setItem(`music-room:${this.code}`, JSON.stringify(room));
       this.channel?.postMessage(value); this.onRoom?.(room);
     }
+  }
+  async songs(): Promise<SavedSong[]> {
+    if (localServerConfigured) { const response = await fetch('/api/songs'); if (!response.ok) throw new Error('Could not load saved songs.'); return response.json(); }
+    if (!this.db) throw new Error('The song library requires the local server or Firebase.');
+    return availableSongs((await get(ref(this.db, 'songs'))).val() || {});
+  }
+  async saveSong(sheet: ImageSheet) {
+    if (!this.master || !this.code) throw new Error('Only the Master can save songs.');
+    const value = validateSheet(sheet);
+    if (localServerConfigured) {
+      const response = await fetch(`/api/local-rooms/${this.code}/songs`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem(`music-master-token:${this.code}`)}` }, body: JSON.stringify(value) });
+      if (!response.ok) throw new Error((await response.json()).error || 'Could not save the song.'); return;
+    }
+    if (!this.db) throw new Error('The song library requires the local server or Firebase.');
+    await set(ref(this.db, `songs/${value.id}`), { ...value, ownerId: this.uid, roomCode: this.code, createdAt: serverTimestamp() });
+  }
+  async changeSheet(sheet?: ImageSheet) {
+    if (!this.master || !this.code || !this.connected || !navigator.onLine) throw new Error('Connect as the Master before sharing a sheet.');
+    const targetCode = this.code;
+    let value = sheet ? validateSheet(sheet) : undefined;
+    if (value && this.db) { const saved = (await get(ref(this.db, `songs/${value.id}`))).val() as SavedSong | null; if (!saved || saved.deletedAt !== undefined) throw new Error('This song is no longer in the library.'); value = validateSheet(saved); }
+    if (this.code !== targetCode || !this.master || !this.connected) throw new Error('Room changed. Select the song in the current room.');
+    const position: Position = { page: 1, offset: 0, zoom: 1, horizontal: 0, sourceId: value?.id || 'pdf', sequence: ++this.sequence, updatedAt: Date.now() + this.serverOffset };
+    if (this.db) await update(ref(this.db, `rooms/${this.code}`), { sheet: value || null, position: { ...position, updatedAt: serverTimestamp() } });
+    else if (localServerConfigured) {
+      const response = await fetch(`/api/local-rooms/${this.code}/sheet`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem(`music-master-token:${this.code}`)}` }, body: JSON.stringify({ sheet: value || null }) });
+      if (!response.ok) throw new Error((await response.json()).error || 'Could not share the sheet.');
+    } else {
+      const room = this.localRead(this.code); if (!room || room.masterId !== this.uid) throw new Error('Room unavailable.');
+      if (value) room.sheet = value; else delete room.sheet;
+      room.position = position; localStorage.setItem(`music-room:${this.code}`, JSON.stringify(room)); this.sourceId = position.sourceId!;
+      this.channel?.postMessage(position); this.onRoom?.(room);
+    }
+  }
+  async uploadSegment(blob: Blob, sheetId: string, index: number) {
+    if (!this.master || !this.code) throw new Error('Only the Master can upload screenshots.');
+    if (blob.type !== 'image/jpeg' || !blob.size || blob.size > 3 * 1024 * 1024 || !/^[a-f0-9]{32}$/.test(sheetId) || !Number.isInteger(index) || index < 0 || index >= 40) throw new Error('Invalid screenshot segment.');
+    if (localServerConfigured) {
+      const response = await fetch(`/api/local-rooms/${this.code}/images`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Authorization: `Bearer ${sessionStorage.getItem(`music-master-token:${this.code}`)}` }, body: blob });
+      const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Screenshot upload failed.'); return result.url as string;
+    }
+    if (!this.db) throw new Error('Screenshot sharing requires the local server or Firebase.');
+    const url = env.VITE_SUPABASE_URL, key = env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    if (!url || !key) throw new Error('Screenshot storage has not been configured.');
+    const user = getAuth(getApps().find(app => app.name === '[DEFAULT]')!).currentUser;
+    if (!user) throw new Error('Reconnect to the room.');
+    const filename = `${this.uid}/${sheetId}/${index}.jpg`;
+    const response = await fetch(`${url}/storage/v1/object/room-sheets/${filename}`, { method: 'POST', headers: { apikey: key, Authorization: `Bearer ${await user.getIdToken()}`, 'Content-Type': 'image/jpeg', 'x-upsert': 'false' }, body: blob });
+    if (!response.ok) throw new Error('Screenshot upload failed. Check the room-sheets bucket and upload policy.');
+    return `${url}/storage/v1/object/public/room-sheets/${filename}`;
   }
   leave() { this.cleanups.forEach(fn => fn()); this.cleanups = []; this.channel?.close(); this.channel = undefined; this.onRoom = undefined; this.master = false; this.connected = false; this.sequence = 0; this.code = ''; }
 }
