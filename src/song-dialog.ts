@@ -1,10 +1,12 @@
 import type { RoomService } from './rooms';
+import { isPdfFile } from './sheets';
+import type { SharedFile } from './sheets';
 import type { SavedSong } from './song-library';
 import { SongbookViewer } from './viewer';
 
 export function showSongLibrary(service: RoomService, pdfTitle: string): () => void {
   const dialog = document.createElement('dialog'); dialog.className = 'sheet-dialog';
-  dialog.innerHTML = '<button class="dialog-close icon-button" aria-label="Close song library">×</button><h2>Choose a song</h2><button class="secondary library-refresh">Refresh songs</button><p class="library-status" role="status">Loading songs…</p><div class="library-list"></div>';
+  dialog.innerHTML = '<button class="dialog-close icon-button" aria-label="Close song library">×</button><h2>Select file/song</h2><button class="secondary library-refresh">Refresh files</button><p class="library-status" role="status">Loading songs…</p><div class="library-list"></div>';
   document.body.append(dialog); dialog.showModal(); let alive = true, busy = false;
   const list = dialog.querySelector<HTMLElement>('.library-list')!, status = dialog.querySelector<HTMLElement>('.library-status')!;
   const refresh = dialog.querySelector<HTMLButtonElement>('.library-refresh')!;
@@ -24,8 +26,8 @@ export function showSongLibrary(service: RoomService, pdfTitle: string): () => v
     list.querySelectorAll('button').forEach(button => button.disabled = true); status.textContent = 'Loading songs…';
     try {
       const songs = await service.songs(); if (!alive) return;
-      list.replaceChildren(); button(`PDF · ${pdfTitle}`); songs.forEach(song => button(song.title, song));
-      status.textContent = songs.length ? 'Select a source for everyone in the room.' : 'No saved songs yet. Upload screenshots to add one.';
+      list.replaceChildren(); button(`PDF · ${pdfTitle}`); songs.forEach(song => button(`${isPdfFile(song) ? 'PDF' : 'Images'} | ${song.title}`, song));
+      status.textContent = songs.length ? 'Select a source for everyone in the room.' : 'No saved songs yet. Upload a PDF or screenshots to add one.';
     } catch (error) { if (alive) status.textContent = error instanceof Error ? error.message : 'Could not load songs.'; }
     finally { busy = false; if (alive) { refresh.disabled = false; list.querySelectorAll('button').forEach(button => button.disabled = false); } }
   };
@@ -33,7 +35,7 @@ export function showSongLibrary(service: RoomService, pdfTitle: string): () => v
   return close;
 }
 
-export function showSongPreview(song: SavedSong): () => void {
+export function showSongPreview(song: SharedFile): () => void {
   const dialog = document.createElement('dialog'); dialog.className = 'song-preview-dialog';
   dialog.innerHTML = '<button class="dialog-close icon-button" aria-label="Close song preview">×</button><h2></h2><div class="pdf-host" tabindex="0" aria-label="Saved song preview"></div><div class="preview-controls"><button class="secondary" aria-label="Preview zoom out">−</button><span>100%</span><button class="secondary" aria-label="Preview zoom in">+</button></div>';
   dialog.querySelector('h2')!.textContent = song.title; document.body.append(dialog); dialog.showModal();
@@ -43,6 +45,6 @@ export function showSongPreview(song: SavedSong): () => void {
   dialog.querySelector<HTMLButtonElement>('.dialog-close')!.onclick = close; dialog.addEventListener('close', close);
   dialog.querySelector<HTMLButtonElement>('[aria-label="Preview zoom out"]')!.onclick = () => viewer.setZoom((viewer.position()?.zoom || 1) - .1);
   dialog.querySelector<HTMLButtonElement>('[aria-label="Preview zoom in"]')!.onclick = () => viewer.setZoom((viewer.position()?.zoom || 1) + .1);
-  void viewer.loadSheet(song).then(() => { if (alive) viewer.follow({ page: 1, offset: 0, zoom: 1, horizontal: 0 }, true); }).catch(error => { if (alive) dialog.querySelector('h2')!.textContent = error instanceof Error ? error.message : 'Could not open song.'; });
+  void (isPdfFile(song) ? viewer.load(song.pdfUrl) : viewer.loadSheet(song)).then(() => { if (alive) viewer.follow({ page: 1, offset: 0, zoom: 1, horizontal: 0 }, true); }).catch(error => { if (alive) dialog.querySelector('h2')!.textContent = error instanceof Error ? error.message : 'Could not open song.'; });
   return close;
 }

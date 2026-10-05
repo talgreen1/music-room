@@ -2,8 +2,9 @@ import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, signInAnonymously, connectAuthEmulator } from 'firebase/auth';
 import { getDatabase, ref, get, onValue, runTransaction, set, update, serverTimestamp, connectDatabaseEmulator, type Database } from 'firebase/database';
 import { availableSongs, type SavedSong } from './song-library';
-import { validateSheet, type ImageSheet } from './sheets';
+import { validateFile, type SharedFile } from './sheets';
 import { roomCode, normalizePosition, type Room, type Position } from './model';
+import { uploadLibraryPdf } from './file-upload';
 import { validateSongbook } from './songbook';
 const env = import.meta.env;
 let emulatorsConnected = false;
@@ -68,8 +69,17 @@ export class RoomService {
       const descriptor = await get(ref(this.db, 'songbook'));
       if (descriptor.exists()) Object.assign(songbook, validateSongbook(descriptor.val()));
     }
+    let selected: SharedFile | undefined;
+    if (this.db) {
+      const id = (await get(ref(this.db, 'defaultFile'))).val() || 'pdf';
+      if (id !== 'pdf') {
+        const saved = (await get(ref(this.db, `songs/${id}`))).val() as SavedSong | null;
+        if (!saved || saved.deletedAt !== undefined) throw new Error('Default file is unavailable. Please try again.');
+        selected = validateFile(saved);
+      }
+    }
     const now = Date.now() + this.serverOffset;
-    const room: Room = { masterId: this.uid, ...songbook, createdAt: now, expiresAt: now + 86400000, position: { page: 1, offset: 0, zoom: 1, sequence: 0, updatedAt: now } };
+    const room: Room = { masterId: this.uid, ...songbook, ...(selected ? { sheet: selected } : {}), createdAt: now, expiresAt: now + 86400000, position: { page: 1, offset: 0, zoom: 1, sourceId: selected?.id || 'pdf', sequence: 0, updatedAt: now } };
     for (let attempt = 0; attempt < 10; attempt++) {
       const code = roomCode();
       if (this.db) {
@@ -169,9 +179,9 @@ export class RoomService {
     if (!this.db) throw new Error('The song library requires the local server or Firebase.');
     return availableSongs((await get(ref(this.db, 'songs'))).val() || {});
   }
-  async saveSong(sheet: ImageSheet) {
+  async saveSong(sheet: SharedFile) {
     if (!this.master || !this.code) throw new Error('Only the Master can save songs.');
-    const value = validateSheet(sheet);
+    const value = validateFile(sheet);
     if (localServerConfigured) {
       const response = await fetch(`/api/local-rooms/${this.code}/songs`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem(`music-master-token:${this.code}`)}` }, body: JSON.stringify(value) });
       if (!response.ok) throw new Error((await response.json()).error || 'Could not save the song.'); return;
@@ -179,11 +189,11 @@ export class RoomService {
     if (!this.db) throw new Error('The song library requires the local server or Firebase.');
     await set(ref(this.db, `songs/${value.id}`), { ...value, ownerId: this.uid, roomCode: this.code, createdAt: serverTimestamp() });
   }
-  async changeSheet(sheet?: ImageSheet) {
+  async changeSheet(sheet?: SharedFile) {
     if (!this.master || !this.code || !this.connected || !navigator.onLine) throw new Error('Connect as the Master before sharing a sheet.');
     const targetCode = this.code;
-    let value = sheet ? validateSheet(sheet) : undefined;
-    if (value && this.db) { const saved = (await get(ref(this.db, `songs/${value.id}`))).val() as SavedSong | null; if (!saved || saved.deletedAt !== undefined) throw new Error('This song is no longer in the library.'); value = validateSheet(saved); }
+    let value = sheet ? validateFile(sheet) : undefined;
+    if (value && this.db) { const saved = (await get(ref(this.db, `songs/${value.id}`))).val() as SavedSong | null; if (!saved || saved.deletedAt !== undefined) throw new Error('This song is no longer in the library.'); value = validateFile(saved); }
     if (this.code !== targetCode || !this.master || !this.connected) throw new Error('Room changed. Select the song in the current room.');
     const position: Position = { page: 1, offset: 0, zoom: 1, horizontal: 0, sourceId: value?.id || 'pdf', sequence: ++this.sequence, updatedAt: Date.now() + this.serverOffset };
     if (this.db) await update(ref(this.db, `rooms/${this.code}`), { sheet: value || null, position: { ...position, updatedAt: serverTimestamp() } });
@@ -196,6 +206,11 @@ export class RoomService {
       room.position = position; localStorage.setItem(`music-room:${this.code}`, JSON.stringify(room)); this.sourceId = position.sourceId!;
       this.channel?.postMessage(position); this.onRoom?.(room);
     }
+  }
+  async uploadPdf(file: File, id: string): Promise<string> {
+    if (!this.master || !this.code) throw new Error('Only the Master can upload files.');
+    const user = this.db ? getAuth(getApps().find(app => app.name === '[DEFAULT]')!).currentUser : null;
+    return uploadLibraryPdf(file, id, user, localServerConfigured ? `/api/local-rooms/${this.code}/pdfs` : undefined, sessionStorage.getItem(`music-master-token:${this.code}`) || undefined);
   }
   async uploadSegment(blob: Blob, sheetId: string, index: number) {
     if (!this.master || !this.code) throw new Error('Only the Master can upload screenshots.');

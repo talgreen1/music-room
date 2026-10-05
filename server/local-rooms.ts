@@ -6,20 +6,20 @@ import { SongLibrary } from './song-library';
 import { AdminSessions } from './admin-auth';
 import { validateSongbook, validatePdfUpload, MAX_PDF_BYTES, type Songbook } from '../src/songbook';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { validateSheet, validateJpeg, MAX_IMAGE_BYTES, type ImageSheet } from '../src/sheets';
+import { validateFile, isPdfFile, validateJpeg, MAX_IMAGE_BYTES, type SharedFile } from '../src/sheets';
 
 type Listener = (room: Room | null) => void;
 type Entry = { room: Room; token: string; listeners: Set<Listener> };
 export class LocalRoomStore {
   private rooms = new Map<string, Entry>();
   constructor(private now = Date.now, private code = () => String(randomInt(100000, 1000000))) {}
-  create(descriptor: Pick<Room, 'masterId' | 'pdfUrl' | 'pdfVersion' | 'pdfTitle'>) {
+  create(descriptor: Pick<Room, 'masterId' | 'pdfUrl' | 'pdfVersion' | 'pdfTitle' | 'sheet'>) {
     this.prune();
     for (let attempt = 0; attempt < 20; attempt++) {
       const code = this.code();
       if (this.rooms.has(code)) continue;
       const now = this.now();
-      const room: Room = { ...descriptor, createdAt: now, expiresAt: now + 86400000, position: { page: 1, offset: 0, zoom: 1, sequence: 0, updatedAt: now } };
+      const room: Room = { ...descriptor, createdAt: now, expiresAt: now + 86400000, position: { page: 1, offset: 0, zoom: 1, sourceId: descriptor.sheet?.id || 'pdf', sequence: 0, updatedAt: now } };
       const token = randomBytes(32).toString('hex');
       this.rooms.set(code, { room, token, listeners: new Set() });
       return { code, room: structuredClone(room), token };
@@ -28,12 +28,12 @@ export class LocalRoomStore {
   }
   read(code: string) { const entry = this.rooms.get(code); return entry && entry.room.expiresAt > this.now() ? structuredClone(entry.room) : null; }
   authorized(code: string, token: string) { const entry = this.rooms.get(code); return Boolean(entry && entry.room.expiresAt > this.now() && token && token === entry.token); }
-  changeSheet(code: string, token: string, value?: ImageSheet): 'ok' | 'missing' | 'forbidden' | 'invalid' {
+  changeSheet(code: string, token: string, value?: SharedFile): 'ok' | 'missing' | 'forbidden' | 'invalid' {
     if (!this.read(code)) return 'missing';
     if (!this.authorized(code, token)) return 'forbidden';
     const entry = this.rooms.get(code)!;
-    let sheet: ImageSheet | undefined;
-    try { sheet = value !== undefined ? validateSheet(value) : undefined; } catch { return 'invalid'; }
+    let sheet: SharedFile | undefined;
+    try { sheet = value !== undefined ? validateFile(value) : undefined; } catch { return 'invalid'; }
     if (sheet) entry.room.sheet = sheet; else delete entry.room.sheet;
     entry.room.position = { page: 1, offset: 0, horizontal: 0, zoom: 1, sourceId: sheet?.id || 'pdf', sequence: (entry.room.position.sequence || 0) + 1, updatedAt: this.now() };
     for (const listener of entry.listeners) listener(structuredClone(entry.room));
@@ -90,9 +90,25 @@ async function uploadScreenshot(req: IncomingMessage) {
   return { url: `/api/sheets/${filename}` };
 }
 async function localSong(input: unknown) {
-  const song = validateSheet(input as ImageSheet);
-  for (const segment of song.segments) { const name = /^\/api\/sheets\/([a-f0-9]{32}\.jpg)$/.exec(segment.url)?.[1]; if (!name) throw new Error('Invalid local screenshot URL.'); await readFile(`.local-data/sheets/${name}`); }
+  const song = validateFile(input as SharedFile);
+  if (isPdfFile(song)) {
+    const name = /^\/api\/songbooks\/([a-f0-9]{32}\.pdf)$/.exec(song.pdfUrl)?.[1];
+    if (!name) throw new Error('Invalid local PDF URL.');
+    await readFile(`.local-data/songbooks/${name}`);
+  } else {
+    for (const segment of song.segments) { const name = /^\/api\/sheets\/([a-f0-9]{32}\.jpg)$/.exec(segment.url)?.[1]; if (!name) throw new Error('Invalid local screenshot URL.'); await readFile(`.local-data/sheets/${name}`); }
+  }
   return song;
+}
+
+async function uploadPdf(req: IncomingMessage) {
+  if (Number(req.headers['content-length']) > MAX_PDF_BYTES) throw new Error('Choose a PDF file up to 30 MB.');
+  const chunks: Buffer[] = []; let size = 0;
+  for await (const chunk of req) { size += chunk.length; if (size > MAX_PDF_BYTES) throw new Error('Choose a PDF file up to 30 MB.'); chunks.push(Buffer.from(chunk)); }
+  const bytes = Buffer.concat(chunks); validatePdfUpload(size, bytes);
+  const filename = `${randomBytes(16).toString('hex')}.pdf`;
+  await mkdir('.local-data/songbooks', { recursive: true }); await writeFile(`.local-data/songbooks/${filename}`, bytes, { flag: 'wx' });
+  return { pdfUrl: `/api/songbooks/${filename}` };
 }
 
 /** Development-only shared backend. No cloud accounts or extra packages needed. */
@@ -110,11 +126,12 @@ export function localRoomsPlugin(env: Record<string, string> = {}): Plugin {
       server.httpServer?.once('close', () => clearInterval(expiry));
       server.middlewares.use((req, res, next) => {
         const url = new URL(req.url || '/', 'http://localhost');
-        if (!url.pathname.startsWith('/api/local-rooms') && !url.pathname.startsWith('/api/admin') && !url.pathname.startsWith('/api/sheets/') && !url.pathname.startsWith('/api/songbooks/') && url.pathname !== '/api/songbook' && url.pathname !== '/api/songs') { next(); return; }
+        if (!url.pathname.startsWith('/api/local-rooms') && !url.pathname.startsWith('/api/admin') && !url.pathname.startsWith('/api/sheets/') && !url.pathname.startsWith('/api/songbooks/') && url.pathname !== '/api/songbook' && url.pathname !== '/api/songs' && url.pathname !== '/api/default-file') { next(); return; }
         void (async () => {
           // Prevent other websites from creating/modifying local rooms through the browser.
           if (req.method !== 'GET' && req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) { json(res, 403, { error: 'Origin not allowed.' }); return; }
           await loaded;
+          if (url.pathname === '/api/default-file' && req.method === 'GET') { json(res, 200, { id: await library.defaultFile() }); return; }
           if (url.pathname === '/api/songs' && req.method === 'GET') { json(res, 200, await library.list()); return; }
           if (url.pathname.startsWith('/api/sheets/') && req.method === 'GET') {
             const filename = /^\/api\/sheets\/([a-f0-9]{32}\.jpg)$/.exec(url.pathname)?.[1];
@@ -122,7 +139,7 @@ export function localRoomsPlugin(env: Record<string, string> = {}): Plugin {
             try { const bytes = await readFile(`.local-data/sheets/${filename}`); res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': bytes.length, 'Cache-Control': 'public,max-age=31536000,immutable', 'X-Content-Type-Options': 'nosniff' }); res.end(bytes); }
             catch { json(res, 404, { error: 'Image not found.' }); } return;
           }
-          const sheetRoute = /^\/api\/local-rooms\/(\d{6})\/(sheet|images|songs)$/.exec(url.pathname);
+          const sheetRoute = /^\/api\/local-rooms\/(\d{6})\/(sheet|images|songs|pdfs)$/.exec(url.pathname);
           if (sheetRoute) {
             const code = sheetRoute[1], token = req.headers.authorization?.replace(/^Bearer /, '') || '';
             if (!store.read(code)) { json(res, 404, { error: 'Room unavailable.' }); return; }
@@ -133,11 +150,12 @@ export function localRoomsPlugin(env: Record<string, string> = {}): Plugin {
             }
             if (sheetRoute[2] === 'sheet' && req.method === 'PUT') {
               const input = await body(req); if (!Object.hasOwn(input, 'sheet')) throw new Error('Missing sheet.');
-              let sheet: ImageSheet | undefined;
-              if (input.sheet !== null) { const requested = validateSheet(input.sheet as ImageSheet); const saved = await library.get(requested.id); if (!saved) throw new Error('This song is no longer in the library.'); sheet = validateSheet(saved); }
+              let sheet: SharedFile | undefined;
+              if (input.sheet !== null) { const requested = validateFile(input.sheet as SharedFile); const saved = await library.get(requested.id); if (!saved) throw new Error('This song is no longer in the library.'); sheet = validateFile(saved); }
               const result = store.changeSheet(code, token, sheet);
               json(res, result === 'ok' ? 200 : 400, result === 'ok' ? { ok: true } : { error: result }); return;
             }
+            if (sheetRoute[2] === 'pdfs' && req.method === 'POST') { json(res, 201, await uploadPdf(req)); return; }
             if (sheetRoute[2] === 'images' && req.method === 'POST') {
               json(res, 201, await uploadScreenshot(req)); return;
             }
@@ -162,19 +180,14 @@ export function localRoomsPlugin(env: Record<string, string> = {}): Plugin {
               } catch (error) { json(res, 401, { error: (error as Error).message }); } return;
             }
             if (!auth.authorized(req.headers.cookie)) { json(res, 401, { error: 'Sign in to Settings.' }); return; }
+            if (url.pathname === '/api/admin/default-file' && req.method === 'PUT') { const input = await body(req); if (typeof input.id !== 'string') throw new Error('Choose a default file.'); await library.setDefault(input.id); json(res, 200, { ok: true }); return; }
             if (url.pathname === '/api/admin/images' && req.method === 'POST') { json(res, 201, await uploadScreenshot(req)); return; }
             if (url.pathname === '/api/admin/songs' && req.method === 'POST') { const song = await localSong(await body(req)); json(res, 201, await library.save(song, 'settings-admin')); return; }
             if (url.pathname === '/api/admin/songs' && req.method === 'GET') { await library.cleanup(activeSongIds()); json(res, 200, await library.list()); return; }
             const songTarget = /^\/api\/admin\/songs\/([a-f0-9]{32})$/.exec(url.pathname);
             if (songTarget && req.method === 'DELETE') { await library.delete(songTarget[1]); await library.cleanup(activeSongIds()); json(res, 200, { ok: true }); return; }
             if (url.pathname === '/api/admin/upload' && req.method === 'POST') {
-              if (Number(req.headers['content-length']) > MAX_PDF_BYTES) { json(res, 413, { error: 'Choose a PDF file up to 30 MB.' }); return; }
-              const chunks: Buffer[] = []; let size = 0;
-              for await (const chunk of req) { size += chunk.length; if (size > MAX_PDF_BYTES) throw new Error('Choose a PDF file up to 30 MB.'); chunks.push(Buffer.from(chunk)); }
-              const bytes = Buffer.concat(chunks); validatePdfUpload(size, bytes);
-              const filename = `${randomBytes(16).toString('hex')}.pdf`;
-              await mkdir('.local-data/songbooks', { recursive: true }); await writeFile(`.local-data/songbooks/${filename}`, bytes, { flag: 'wx' });
-              json(res, 201, { pdfUrl: `/api/songbooks/${filename}` }); return;
+              json(res, 201, await uploadPdf(req)); return;
             }
             if (url.pathname === '/api/admin/logout' && req.method === 'POST') {
               auth.logout(req.headers.cookie); res.setHeader('Set-Cookie', 'music_admin=; HttpOnly; SameSite=Strict; Path=/api/admin; Max-Age=0'); json(res, 200, { ok: true }); return;
@@ -192,7 +205,10 @@ export function localRoomsPlugin(env: Record<string, string> = {}): Plugin {
           if (url.pathname === '/api/local-rooms' && req.method === 'POST') {
             const input = await body(req);
             for (const key of ['masterId', 'pdfUrl', 'pdfVersion', 'pdfTitle']) if (typeof input[key] !== 'string' || !(input[key] as string).length || (input[key] as string).length > 2048) { json(res, 400, { error: 'Invalid room configuration.' }); return; }
-            json(res, 201, store.create({ masterId: input.masterId as string, ...current })); return;
+            const defaultId = await library.defaultFile();
+            const selected = defaultId === 'pdf' ? undefined : await library.get(defaultId);
+            if (defaultId !== 'pdf' && !selected) throw new Error('Default file is unavailable.');
+            json(res, 201, store.create({ masterId: input.masterId as string, ...current, ...(selected ? { sheet: validateFile(selected) } : {}) })); return;
           }
           const match = /^\/api\/local-rooms\/(\d{6})(\/events)?$/.exec(url.pathname);
           if (!match) { json(res, 404, { error: 'Room not found.' }); return; }

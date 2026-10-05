@@ -2,6 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { LocalRoomStore } from '../server/local-rooms';
 const descriptor = { masterId: 'creator', pdfUrl: '/songbook.pdf', pdfVersion: 'one', pdfTitle: 'Book' };
 describe('shared local development rooms', () => {
+  it('starts with a selected PDF or image default and keeps source identity across switches', () => {
+    const store = new LocalRoomStore();
+    const pdf = { id: 'd'.repeat(32), title: 'Second book', pdfUrl: '/api/songbooks/book.pdf' };
+    const image = { id: 'e'.repeat(32), title: 'Song', segments: [{ url: '/api/sheets/song.jpg', width: 480, height: 800 }] };
+    const created = store.create({ ...descriptor, sheet: pdf });
+    expect(created.room.sheet).toEqual(pdf);
+    expect(created.room.position).toMatchObject({ page: 1, sourceId: pdf.id, sequence: 0 });
+    expect(store.changeSheet(created.code, 'follower', image)).toBe('forbidden');
+    expect(store.publish(created.code, created.token, { page: 2, offset: .3, zoom: 2, sourceId: pdf.id })).toBe('ok');
+    expect(store.changeSheet(created.code, created.token, image)).toBe('ok');
+    expect(store.publish(created.code, created.token, { page: 2, offset: .3, zoom: 2, sourceId: pdf.id })).toBe('invalid');
+    expect(store.read(created.code)?.position).toMatchObject({ page: 1, zoom: 1, sourceId: image.id });
+    expect(store.read(created.code)?.pdfUrl).toBe(descriptor.pdfUrl);
+  });
   it('atomically switches sheets, rejects Followers and rejects stale source positions', () => {
     const store = new LocalRoomStore(); const created = store.create(descriptor);
     const sheet = { id: 'a'.repeat(32), title: 'Chords', segments: [{ url: '/api/sheets/image.jpg', width: 960, height: 2000 }] };

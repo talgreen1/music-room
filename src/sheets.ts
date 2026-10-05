@@ -1,5 +1,14 @@
 export interface SheetSegment { url: string; width: number; height: number }
 export interface ImageSheet { id: string; title: string; segments: SheetSegment[] }
+export interface PdfFile { id: string; title: string; pdfUrl: string }
+export type SharedFile = ImageSheet | PdfFile;
+export const isPdfFile = (file: SharedFile): file is PdfFile => Boolean(file && typeof file === 'object' && 'pdfUrl' in file);
+export const fileUrls = (file: SharedFile) => isPdfFile(file) ? [file.pdfUrl] : file.segments.map(segment => segment.url);
+export function validateFile(value: SharedFile): SharedFile {
+  if (!value || !isPdfFile(value)) return validateSheet(value as ImageSheet);
+  if (!/^[a-f0-9]{32}$/.test(value.id) || typeof value.title !== 'string' || !value.title.trim() || value.title.length > 120 || typeof value.pdfUrl !== 'string' || value.pdfUrl.length > 2048 || !/^(https:\/\/|\/(?!\/))/.test(value.pdfUrl) || 'segments' in value) throw new Error('Invalid PDF file.');
+  return { id: value.id, title: value.title.trim(), pdfUrl: value.pdfUrl };
+}
 export const MAX_SEGMENTS = 40;
 export const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 export function validateSheet(value: ImageSheet): ImageSheet {

@@ -1,6 +1,6 @@
 # Music Room
 
-A mobile browser songbook: one Master controls the reading position and Followers follow or browse independently. Share the supplied 145-page PDF or automatically stitched screenshots saved in a reusable song library.
+A mobile browser songbook: one Master controls the reading position and Followers follow or browse independently. Share the supplied 145-page PDF, any uploaded PDF, or automatically stitched screenshots from a reusable file library.
 
 Live app: **https://talgreen-music-room.web.app**. Create a room there and share its link/code with another browser or phone; joining makes that participant a Follower. Local development also has a shared server backend for separate browsers and devices. Cloud authorization and live SDK updates have been verified; physical Android/iPhone and network-loss testing remain outstanding in [DETAILED_PLAN.md](DETAILED_PLAN.md). Architecture is in [HIGH_LEVEL_DESIGN.md](HIGH_LEVEL_DESIGN.md).
 
@@ -20,21 +20,24 @@ music-room/
 │   ├── viewer.ts            # PDF and screenshot rendering, zoom, and smooth following
 │   ├── stitch.ts            # Screenshot overlap and stationary-bar matching
 │   ├── screenshot-import.ts # Image decoding, cropping and bounded JPEG export
+│   ├── file-upload.ts       # Shared local/Supabase PDF upload client
 │   ├── sheet-dialog.ts      # Import, stitch preview and upload dialog
 │   ├── song-dialog.ts       # Saved song chooser and zoom/pan preview
 │   ├── song-library.ts      # Saved-song metadata and lifecycle helpers
-│   ├── sheets.ts            # Image manifest and upload validation
+│   ├── sheets.ts            # PDF/image source manifest and upload validation
 │   ├── style.css            # Dark interface and responsive layouts
 │   └── *.test.ts            # Model, publisher, and local room store tests
 ├── server/
 │   ├── local-rooms.ts       # Vite development middleware: room API and SSE streams
-│   └── song-library.ts      # Persistent local catalog and image cleanup
+│   └── song-library.ts      # Persistent local catalog/default and file cleanup
 ├── scripts/
+│   ├── test-file-library.mjs # PDF/image uploads, defaults and permission checks
 │   ├── test-local-server.mjs # Integration check against a running development server
 │   ├── test-cloud-rooms.mjs  # Integration check with distinct Firebase identities
 │   └── test-cloud-sheets.mjs # Disposable cloud upload/library/security checks
 ├── supabase/
 │   ├── storage.sql          # PDF bucket and administrator upload policy
+│   ├── files.sql            # Shared PDF bucket and Settings-only cleanup
 │   └── sheets.sql           # Screenshot bucket, upload and cleanup policies
 ├── public/songbooks/        # Versioned PDFs copied into each build
 ├── index.html               # Browser entry point
@@ -56,7 +59,7 @@ The original supplied PDF remains at the repository root. Its published copy is 
 
 ## Architecture
 
-The frontend is a TypeScript application built with Vite. PDF.js runs in each participant's browser using a separate worker. The viewer and worker use matching PDF.js compatibility (`legacy`) bundles so rendering does not depend on newer built-ins missing from some mobile browsers. Firebase Hosting serves the frontend, worker, and bundled PDF. Supabase Storage hosts PDF replacements and screenshot tiles. Firebase Authentication supplies invisible anonymous identities for musicians and a separate password account for Settings; Realtime Database stores rooms, the current songbook descriptor and the reusable song catalog.
+The frontend is a TypeScript application built with Vite. PDF.js runs in each participant's browser using a separate worker. The viewer and worker use matching PDF.js compatibility (`legacy`) bundles so rendering does not depend on newer built-ins missing from some mobile browsers. Firebase Hosting serves the frontend, worker, and bundled PDF. Supabase Storage hosts PDF replacements and screenshot tiles. Firebase Authentication supplies invisible anonymous identities for musicians and a separate password account for Settings; Realtime Database stores rooms, the original songbook descriptor, the reusable file catalog and the default file ID.
 
 ```mermaid
 flowchart LR
@@ -70,7 +73,7 @@ flowchart LR
 
 ### Room lifecycle and ownership
 
-Creating a room reserves a six-digit code with a Firebase transaction. The room records its creator's UID, creation time, 24-hour expiry, songbook descriptor, and initial position. Joining subscribes to that specific room and loads its pinned PDF. The URL contains only the room code, for example `/?room=123456`.
+Creating a room reserves a six-digit code with a Firebase transaction. The room records its creator's UID, creation time, 24-hour expiry, songbook descriptor, and initial position. New rooms start with the administrator-selected default PDF or image sheet. Joining subscribes to that specific room and loads its selected source. The URL contains only the room code, for example `/?room=123456`.
 
 `RoomService` in `src/rooms.ts` handles the backend operations. The Master UI requires both the creator's authenticated UID and a creator flag in the tab's session storage. Database rules independently enforce that only the creator may write positions. Followers can read active rooms but cannot change ownership, the PDF descriptor, or the room lifetime. Root reads are denied. Room-list reads and room deletion require a separately allowlisted Settings administrator.
 
@@ -314,27 +317,27 @@ Serve the versioned PDFs and generated PDF.js worker from the same deployment; a
 
 ## Current controls
 
-### Settings and PDF uploads
+### Settings and file uploads
 
 Implementation modules are `src/settings.ts` (screen/forms), `src/admin.ts` (local/Firebase/Storage operations), `src/songbook.ts` (descriptor/upload validation), `server/admin-auth.ts` (local password sessions), and `supabase/storage.sql` (bucket/policy setup). Cloud checks are in `scripts/test-cloud-settings.mjs`; account provisioning is in `scripts/setup-settings-admin.mjs`.
 
-The home screen has a **Settings** button. Unlock it using the configured administrator password to list rooms, delete one room or all rooms (with confirmation), view the current PDF, or upload a replacement up to 30 MB. Deleted rooms notify connected participants. New rooms use the replacement; existing rooms retain their pinned PDF.
+The home screen has a **Settings** button. Unlock it using the configured administrator password to list rooms, delete one room or all rooms (with confirmation), view all saved PDFs/image songs, add a PDF (up to 30 MB) or screenshots, choose the default, and delete uploaded files. Masters can upload and select files in their rooms; only Settings administrators can set the default or delete. Changing the default affects new rooms. Existing rooms keep their selected source; deletion retains active copies until those rooms switch away or expire. Choose another default before deleting the current one. The bundled/original songbook is a permanent fallback and is not deleted from this screen.
 
 Local Settings uses `MUSIC_ADMIN_PASSWORD` in `.env.local` (server-only, never `VITE_`). Uploaded files and the default descriptor persist under ignored `.local-data/`; local rooms remain in memory and disappear on restart. Run `node scripts/test-settings.mjs` against `npm run dev` to check authorization, upload/download, room pinning and targeted deletion. The test restores the default and removes only its own rooms.
 
-Cloud Settings uses a separate, in-memory Firebase email/password session, independent of the musician's anonymous identity. The default account email is `settings@music-room.app`; override it with `VITE_ADMIN_EMAIL`. Only UIDs allowlisted at `/admins/<uid> = true` can list/delete rooms and write `/songbook`. Clients cannot read or write the allowlist. Provision that entry with a trusted Firebase CLI account, never with an embedded administrator key. `node --use-system-ca scripts/test-cloud-settings.mjs` verifies cloud administrator permissions, denied musician operations and actual Supabase PDF upload/download; it removes only its own test room and leaves a versioned verification PDF in the bucket.
+Cloud Settings uses a separate, in-memory Firebase email/password session, independent of the musician's anonymous identity. The default account email is `settings@music-room.app`; override it with `VITE_ADMIN_EMAIL`. Only UIDs allowlisted at `/admins/<uid> = true` can list/delete rooms and write `/songbook` and `/defaultFile`, or delete catalog entries. Clients cannot read or write the allowlist. Provision that entry with a trusted Firebase CLI account, never with an embedded administrator key. `node --use-system-ca scripts/test-cloud-settings.mjs` verifies cloud administrator permissions, denied musician operations and actual Supabase PDF upload/download; it removes only its own test room and leaves a versioned verification PDF in the bucket.
 
 Settings accepts the configured password/PIN. For Firebase, `src/settings-password.mjs` converts it to a namespaced credential so short PINs meet Firebase's minimum credential length. The public prefix does not strengthen a short PIN. Provisioning and cloud tests use the same conversion; the PIN itself is not embedded in the frontend. Local sign-in continues to verify the entered PIN on the server.
 
 On the configured development machine, `http://localhost:5173` uses the local server. To test the cloud configuration locally, run `npm run dev -- --mode deployment --port 5174`, then open `http://localhost:5174`. Both ports are available to a phone using the computer's LAN address. Port 5174 uses real cloud rooms and Settings operations. Hosting publication is a separate release step.
 
-Uploaded cloud PDFs go to the **Free Supabase** project `music-room`, bucket `songbooks`. Firebase Storage is not used and no billing upgrade is required. Configure `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in `.env.deployment.local`, using only the public publishable key. Keep Supabase secret/service-role keys and database passwords out of the app.
+Uploaded cloud PDFs go to the **Free Supabase** project `music-room`, bucket `room-pdfs`. The older `songbooks` bucket remains for previously uploaded default PDFs. Firebase Storage is not used and no billing upgrade is required. Configure `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in `.env.deployment.local`, using only the public publishable key. Keep Supabase secret/service-role keys and database passwords out of the app.
 
 For a fresh installation:
 
 1. Enable Firebase email/password authentication (`firebase deploy --only auth`). Set the server-only Settings password in the local environment, then run `node --use-system-ca scripts/setup-settings-admin.mjs`. This signs into or creates the account without printing credentials. Allowlist its printed UID using the trusted CLI.
 2. Create a Free Supabase project. In **Authentication > Sign In / Providers > Third-Party Auth**, add the Firebase project ID.
-3. In the Supabase SQL editor, run [supabase/storage.sql](supabase/storage.sql), adjusting the Firebase project and administrator UID for your installation. It creates a public download bucket limited to PDFs up to 30 MB and permits uploads only from that exact Firebase UID. It permits both Postgres roles because Firebase tokens without custom role claims use `anon`; every upload still checks the token's issuer, audience and UID.
+3. In the Supabase SQL editor, run [supabase/files.sql](supabase/files.sql) and [supabase/sheets.sql](supabase/sheets.sql), adjusting project IDs and the administrator UID for your installation. They create public PDF/JPEG buckets with immutable uploads scoped to each Firebase identity. Only the Settings UID can remove stored files. The original [supabase/storage.sql](supabase/storage.sql) describes the legacy Settings-only PDF bucket; keep it for existing URLs.
 4. Set the two public Supabase environment values, deploy database rules, run the cloud checks, then build/deploy Hosting. Settings passwords are entered at runtime and never bundled.
 
 Supabase's Free plan has storage/download limits and projects can pause after inactivity. Existing bundled PDFs continue working independently of Supabase; rooms pinned to an uploaded PDF need the project to be active. Retain previous uploaded PDFs until their rooms expire, then remove obsolete versions through the Supabase dashboard when storage needs clearing. See [Supabase pricing](https://supabase.com/pricing), [Firebase integration](https://supabase.com/docs/guides/auth/third-party/firebase-auth) and [Storage access control](https://supabase.com/docs/guides/storage/security/access-control).
@@ -349,15 +352,27 @@ Supabase's Free plan has storage/download limits and projects can pause after in
 
 Realtime traffic contains only page, normalized vertical offset, normalized horizontal travel, relative zoom, sequence, and timestamp. PDF pages render locally and nearby canvases are retained rather than rendering all pages simultaneously.
 
+## Upload and choose files
+
+Open **Room menu > Add file/song** as Master, or **Settings > Files & songs > Add file/song** as administrator. Choose one PDF, or one or more PNG/JPEG/WebP screenshots. Mixed PDF/image selections and multiple PDFs in one upload are rejected; add PDFs individually. Enter an optional name; an empty name uses the filename. PDFs keep their pages and clickable internal links. Image selections use the existing automatic stitch/crop preview. Both kinds are saved permanently and can be selected from any room. Only the Master switches the room source.
+
+In Settings, **Make default** marks the file for new rooms. **View** previews PDFs and stitched images with zoom/pan. **Delete** is unavailable for the current default until another default is selected. Files already in use stay visible in those rooms; unused deleted files are cleaned up by a Settings refresh or room deletion. The original songbook remains the first picker choice and a fallback default.
+
+Locally, `.local-data/songs.json` now stores `{version:2,defaultId,files}`; old image-only catalogs migrate on the next write. New PDF files live in `.local-data/songbooks/`. Cloud catalog records remain under `/songs/<id>`, with either `pdfUrl` or `segments`. `/defaultFile` stores a file ID, or `pdf` for the original descriptor. The existing `room.sheet` field holds either manifest type; positions carry its ID so stale updates cannot move another file.
+
+With the dev server running, run `node scripts/test-file-library.mjs` for uploads, role permissions, PDF/image defaults, active-room retention and cleanup. It restores the original default and removes its own records/rooms. Phone upload/pinch testing remains a manual check.
+
+Before deploying this feature, apply **supabase/files.sql**, deploy the updated database rules, verify cloud PDF uploads/default permissions, then publish Hosting. New PDF uploads require the new `room-pdfs` bucket; keeping the old bucket avoids breaking existing rooms. These policies/rules and the frontend were deployed on 2026-10-05. Run `node --use-system-ca scripts/test-cloud-files.mjs` to verify PDF uploads, defaults and permissions; it restores the original default and removes its disposable files/rooms.
+
 ## Share chord screenshots
 
 In a room, the Master opens **☰ > Add file/song**, selects screenshots from top to bottom, optionally enters a song name, and reviews the automatically stitched preview. Capture at the same browser zoom with about one third of each screen overlapping the next. Set the desired transposition on the website first. Use the arrow buttons to reorder captures; **Auto stitch** recalculates joins. Expand **Adjust crop / Review join** to remove top or bottom pixels, then **Update preview**. **Share with room** uploads and permanently saves the song before switching everyone to it. An empty song name uses the first screenshot filename. **☰ > Select file/song** opens the reusable library, with the pinned PDF listed first; select any saved song to share it without uploading again. Pinch, pan and Master sync work as for the PDF. The **PDF** button returns everyone to the pinned songbook at page 1.
 
 Screenshots are static: website links/transposition controls are not interactive. Changing key requires new screenshots. Uncertain overlap matches are preserved and flagged for review rather than silently removing content.
 
-The stitching modules are `src/stitch.ts`, `src/screenshot-import.ts`, `src/sheet-dialog.ts` and `src/sheets.ts`. `src/song-library.ts` defines saved metadata/filtering, `src/song-dialog.ts` provides selection/preview, and `server/song-library.ts` persists the local catalog using serialized atomic writes. `src/viewer.ts` displays short JPEG tiles without gaps; `src/rooms.ts` publishes their manifest and source-tagged position together. Processing uses bounded canvases instead of allocating one enormous image. Limits: 20 captures / 100 MB input, 20 megapixels per capture, 1600-pixel output width, up to 40 JPEG tiles / 30 MB total. Settings previews reuse the zoom/pan viewer. **Settings > Saved songs > Add song** opens the same screenshot importer, with optional name, automatic stitching and crop preview; **Save song** adds it directly to the library without creating a room or changing any room's current view. Run `node scripts/test-settings.mjs` against the local server to check library registration, cross-room reuse, protected deletion, active-copy retention and tile cleanup.
+The stitching modules are `src/stitch.ts`, `src/screenshot-import.ts`, `src/sheet-dialog.ts` and `src/sheets.ts`. `src/song-library.ts` defines saved metadata/filtering, `src/song-dialog.ts` provides selection/preview, and `server/song-library.ts` persists the local catalog using serialized atomic writes. `src/viewer.ts` displays short JPEG tiles without gaps; `src/rooms.ts` publishes their manifest and source-tagged position together. Processing uses bounded canvases instead of allocating one enormous image. Limits: 20 captures / 100 MB input, 20 megapixels per capture, 1600-pixel output width, up to 40 JPEG tiles / 30 MB total. Settings previews reuse the zoom/pan viewer. **Settings > Files & songs > Add file/song** opens the same screenshot importer, with optional name, automatic stitching and crop preview; **Save to library** adds it directly to the library without creating a room or changing any room's current view. Run `node scripts/test-settings.mjs` against the local server to check library registration, cross-room reuse, protected deletion, active-copy retention and tile cleanup.
 
-To add songs during a session, the Master opens **☰ > Settings**, unlocks Settings and chooses **Saved songs > Add song**. Followers can still use the Settings gear in their room header. Settings opens over the room; closing it returns to the same page, zoom and position without disconnecting the room. Songs are shared across all rooms. Each Master opens **☰ > Select file/song** to load the current library, or taps **Refresh songs** if the chooser is already open. Adding a song does not switch anyone's view until their Master selects it.
+To add songs during a session, the Master opens **☰ > Settings**, unlocks Settings and chooses **Files & songs > Add file/song**. Followers can still use the Settings gear in their room header. Settings opens over the room; closing it returns to the same page, zoom and position without disconnecting the room. Songs are shared across all rooms. Each Master opens **☰ > Select file/song** to load the current library, or taps **Refresh files** if the chooser is already open. Adding a song does not switch anyone's view until their Master selects it.
 
 ### Local testing
 
@@ -371,6 +386,6 @@ Screenshot sharing and the song library are deployed at the live app. For anothe
 2. Validate and deploy the updated `database.rules.json` before publishing the frontend. The rules permit only the Master to change the source/position and require matching source IDs. Run `node --use-system-ca scripts/test-cloud-sheets.mjs` to verify real uploads/downloads, Master and room-free Settings imports, Follower denial, reconnect, tombstones and administrator cleanup. It uses `MUSIC_ADMIN_PASSWORD` from the local environment and removes only its own disposable rooms, catalog entries and JPEGs. Do not put that password in a `VITE_*` variable.
 3. Run `npm run build:deploy`, then publish Hosting using the existing deployment process. Refresh all devices after release; older frontend clients do not support image sheets.
 
-No extra service or billing upgrade is introduced. Uploaded sheets consume the existing free Storage and download allowances. Saved songs remain available until deleted in **Settings > Saved songs**, which lists every song and offers **View** and **Delete**. Deletion hides the library entry immediately. Active rooms retain their current copy. On Settings refresh or room deletion, unused deleted songs have their tiles and metadata removed; this avoids interrupting active players while reclaiming storage. Cloud tombstones live under `/songs/<id>/deletedAt`; only the Settings administrator can delete/clean up, and room rules prevent selecting tombstoned songs. Apply the SELECT/DELETE administrator policies in `supabase/sheets.sql` as well as its upload policy. Adjust the Firebase project, administrator UID and Supabase public URL in the SQL/rules for other installations. Failed upload attempts can also leave unused files. Saved local files use the same deletion lifecycle; avoid clearing `.local-data/` if you want to retain the library.
+No extra service or billing upgrade is introduced. Uploaded sheets consume the existing free Storage and download allowances. Saved songs remain available until deleted in **Settings > Files & songs**, which lists every song and offers **View** and **Delete**. Deletion hides the library entry immediately. Active rooms retain their current copy. On Settings refresh or room deletion, unused deleted songs have their tiles and metadata removed; this avoids interrupting active players while reclaiming storage. Cloud tombstones live under `/songs/<id>/deletedAt`; only the Settings administrator can delete/clean up, and room rules prevent selecting tombstoned songs. Apply the SELECT/DELETE administrator policies in `supabase/sheets.sql` as well as its upload policy. Adjust the Firebase project, administrator UID and Supabase public URL in the SQL/rules for other installations. Failed upload attempts can also leave unused files. Saved local files use the same deletion lifecycle; avoid clearing `.local-data/` if you want to retain the library.
 
 Release verified on 2026-10-05: 52 unit tests, type checking, PDF compatibility rendering, local HTTP integration and real-cloud screenshot/PDF room checks passed. Storage SQL and database rules were applied before Firebase Hosting publication. The user approved local testing. Detailed physical Android/iPhone seam, memory and background behavior checks remain tracked in the plan.
