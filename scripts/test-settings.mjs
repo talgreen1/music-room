@@ -18,7 +18,9 @@ async function room(masterId = 'settings-test') {
 try {
   assert.equal((await fetch(`${base}/api/admin/rooms`)).status, 401);
   assert.equal((await fetch(`${base}/api/admin/upload`, { method: 'POST', body: '%PDF-1.7' })).status, 401);
-  // Settings imports must work independently of any room.
+  // Settings imports must not disturb rooms already in progress.
+  const old = await room(), songRoom = await room('another-master');
+  const activeBeforeImport = await Promise.all([old, songRoom].map(async created => (await (await fetch(`${base}/api/local-rooms/${created.code}`)).json()).room));
   const roomsBeforeImport = Object.keys(await (await request('/api/admin/rooms')).json()).sort();
   assert.equal((await fetch(`${base}/api/admin/images`, { method: 'POST', body: new Uint8Array([255, 216, 255, 217]) })).status, 401);
   assert.equal((await fetch(`${base}/api/admin/songs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 401);
@@ -32,14 +34,16 @@ try {
   const savedBySettings = (await (await fetch(`${base}/api/songs`)).json()).find(song => song.id === settingsSongId);
   assert.equal(savedBySettings.ownerId, 'settings-admin'); assert.equal(savedBySettings.roomCode, undefined);
   assert.deepEqual(Object.keys(await (await request('/api/admin/rooms')).json()).sort(), roomsBeforeImport);
-  const old = await room();
-  const openSettingsSong = await fetch(`${base}/api/local-rooms/${old.code}/sheet`, { method: 'PUT', headers: { Authorization: `Bearer ${old.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ sheet: settingsSong }) });
-  assert.equal(openSettingsSong.status, 200);
-  assert.equal((await fetch(`${base}/api/local-rooms/${old.code}/sheet`, { method: 'PUT', headers: { Authorization: `Bearer ${old.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ sheet: null }) })).status, 200);
+  assert.deepEqual(await Promise.all([old, songRoom].map(async created => (await (await fetch(`${base}/api/local-rooms/${created.code}`)).json()).room)), activeBeforeImport);
+  for (const created of [old, songRoom]) {
+    const openSettingsSong = await fetch(`${base}/api/local-rooms/${created.code}/sheet`, { method: 'PUT', headers: { Authorization: `Bearer ${created.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ sheet: settingsSong }) });
+    assert.equal(openSettingsSong.status, 200);
+    assert.equal((await (await fetch(`${base}/api/local-rooms/${created.code}`)).json()).room.sheet.id, settingsSongId);
+    assert.equal((await fetch(`${base}/api/local-rooms/${created.code}/sheet`, { method: 'PUT', headers: { Authorization: `Bearer ${created.token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ sheet: null }) })).status, 200);
+  }
   assert.equal((await request(`/api/admin/songs/${settingsSongId}`, 'DELETE')).status, 200);
   assert.equal((await fetch(`${base}${settingsImageUrl}`)).status, 404);
 
-  const songRoom = await room('another-master');
   const masterRequest = (created, route, method, data) => fetch(`${base}/api/local-rooms/${created.code}/${route}`, { method, headers: { Authorization: `Bearer ${created.token}`, 'Content-Type': route === 'images' ? 'image/jpeg' : 'application/json' }, body: route === 'images' ? data : JSON.stringify(data) });
   const jpeg = new Uint8Array([255, 216, 255, 217]);
   const image = await masterRequest(old, 'images', 'POST', jpeg); assert.equal(image.status, 201); const imageUrl = (await image.json()).url;

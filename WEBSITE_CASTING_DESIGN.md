@@ -61,3 +61,8 @@ The unlocked Settings screen has Add song. It reuses the screenshot importer thr
 - [x] **SS-014 - Verify cloud Settings imports and release.** Verified administrator creation without room metadata, denied musician creation without an owned active room, real Storage upload and reuse in another room. Released after checks passed.
 
 Release validation: 52 unit tests, type checking, PDF rendering compatibility, local HTTP integration and both cloud smoke scripts passed. `scripts/test-cloud-sheets.mjs` removes its own test records and images. The user approved local testing; comprehensive physical-phone checks remain open in SS-006.
+
+## Settings during a session
+
+- [x] **SS-015 - Open Settings without leaving the room.** Compact header gear opens a password-protected dialog using the separate Settings identity. Room subscriptions, viewer and shared position remain active. Nested Add song and preview dialogs reuse existing components; Back or Escape closes and locks Settings. Verified local browser return to page 37 at 110% zoom.
+- [x] **SS-016 - Select newly added songs from any existing room.** Shared catalog is fetched each time Songs opens; Refresh songs reloads an already-open chooser. Importing does not change any room's selected source. Integration checks create two rooms first, verify both snapshots are unchanged by the Settings import, then select the song with each Master's credentials.

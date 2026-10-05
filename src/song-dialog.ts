@@ -4,21 +4,32 @@ import { SongbookViewer } from './viewer';
 
 export function showSongLibrary(service: RoomService, pdfTitle: string): () => void {
   const dialog = document.createElement('dialog'); dialog.className = 'sheet-dialog';
-  dialog.innerHTML = '<button class="dialog-close icon-button" aria-label="Close song library">×</button><h2>Choose a song</h2><p class="library-status" role="status">Loading songs…</p><div class="library-list"></div>';
+  dialog.innerHTML = '<button class="dialog-close icon-button" aria-label="Close song library">×</button><h2>Choose a song</h2><button class="secondary library-refresh">Refresh songs</button><p class="library-status" role="status">Loading songs…</p><div class="library-list"></div>';
   document.body.append(dialog); dialog.showModal(); let alive = true, busy = false;
   const list = dialog.querySelector<HTMLElement>('.library-list')!, status = dialog.querySelector<HTMLElement>('.library-status')!;
+  const refresh = dialog.querySelector<HTMLButtonElement>('.library-refresh')!;
   const close = () => { alive = false; dialog.close(); dialog.remove(); };
   dialog.querySelector<HTMLButtonElement>('.dialog-close')!.onclick = close;
   dialog.addEventListener('close', () => { alive = false; dialog.remove(); });
   const choose = async (song?: SavedSong) => {
-    if (busy) return; busy = true; list.querySelectorAll('button').forEach(button => button.disabled = true);
+    if (busy) return; busy = true; refresh.disabled = true; list.querySelectorAll('button').forEach(button => button.disabled = true);
     try { await service.changeSheet(song); if (alive) close(); }
     catch (error) { if (alive) status.textContent = error instanceof Error ? error.message : 'Could not open song.'; }
-    finally { busy = false; if (alive) list.querySelectorAll('button').forEach(button => button.disabled = false); }
+    finally { busy = false; if (alive) { refresh.disabled = false; list.querySelectorAll('button').forEach(button => button.disabled = false); } }
   };
   const button = (title: string, song?: SavedSong) => { const element = document.createElement('button'); element.className = 'secondary library-choice'; element.textContent = title; element.onclick = () => void choose(song); list.append(element); };
   button(`PDF · ${pdfTitle}`);
-  void service.songs().then(songs => { if (!alive) return; songs.forEach(song => button(song.title, song)); status.textContent = songs.length ? 'Select a source for everyone in the room.' : 'No saved songs yet. Upload screenshots to add one.'; }).catch(error => { if (alive) status.textContent = error instanceof Error ? error.message : 'Could not load songs.'; });
+  const reload = async () => {
+    if (busy || !alive) return; busy = true; refresh.disabled = true;
+    list.querySelectorAll('button').forEach(button => button.disabled = true); status.textContent = 'Loading songs…';
+    try {
+      const songs = await service.songs(); if (!alive) return;
+      list.replaceChildren(); button(`PDF · ${pdfTitle}`); songs.forEach(song => button(song.title, song));
+      status.textContent = songs.length ? 'Select a source for everyone in the room.' : 'No saved songs yet. Upload screenshots to add one.';
+    } catch (error) { if (alive) status.textContent = error instanceof Error ? error.message : 'Could not load songs.'; }
+    finally { busy = false; if (alive) { refresh.disabled = false; list.querySelectorAll('button').forEach(button => button.disabled = false); } }
+  };
+  refresh.onclick = () => void reload(); void reload();
   return close;
 }
 
