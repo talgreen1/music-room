@@ -312,6 +312,21 @@ SS-015/SS-016 release (2026-10-05): user approved testing. All 52 tests, type ch
 
 MR-053/MR-054 release (2026-10-05): user approved phone testing. All 54 tests, type checking and guarded production build passed. Master menu actions, password focus, repeated single-tap navigation, final-page Follower sync and manual scroll tracking verified locally. Published to Firebase Hosting; no backend schema changes required.
 
+
+## Unified file library
+
+- [x] **FL-001 - Upload PDFs or screenshots from either entry point.** As Master or Settings administrator, I can name an upload optionally, choose one PDF or one/more images, and save it in the shared library. PDFs retain their original pages; images retain automatic stitching and crop preview.
+- [x] **FL-002 - Select any saved file in a room.** As Master, I can choose a PDF or image song for everyone. PDF navigation/links, zoom and two-axis synchronization remain available, with source IDs rejecting stale positions.
+- [x] **FL-003 - Administrator sets the default.** As Settings administrator, I can preview any file and choose what new rooms open. Existing rooms retain their source. The original songbook remains available as fallback.
+- [x] **FL-004 - Administrator-only deletion and default protection.** Masters cannot delete or change the global default. Delete is disabled for the current default; backend checks enforce choosing another first. Deleted PDFs/images remain available to active rooms and are cleaned up after their references are released.
+- [x] **FL-005 - Preserve the existing library.** Image-only local catalogs migrate atomically to a versioned files/default document. Cloud records keep their original IDs and image manifest shape. Catalog/default survive local restarts.
+- [ ] **FL-006 - Physical-phone acceptance.** Verify one PDF and multiple screenshots from Master/Settings, optional name, default selection, PDF navigation/links, pinch/pan and Follower sync on Android/iPhone.
+- [x] **FL-007 - Cloud configuration and release.** Apply `supabase/files.sql` for the shared PDF bucket; deploy/validate database rules, verify Master/Settings PDF uploads, unauthorized default/deletion rejection and current-default protection, then publish Hosting and complete the user-requested GitHub release.
+
+Local evidence: persistence/migration, default protection, active PDF cleanup and source-switch regression tests added. `scripts/test-file-library.mjs` verifies both upload roles, exact PDF downloads, shared selection, PDF/image defaults, unchanged active rooms, denied unauthorized operations, stale-source positions and cleanup. All 57 unit tests, type checking and deployment build pass. Browser checks at 390 x 844 confirm PDF preview/default controls, new-room PDF navigation and page-37 synchronization with a separate-origin Follower, and switching both clients between image songs and an uploaded PDF. Automated file selection is blocked by the browser extension file-access setting; actual phone upload remains FL-006. The user approved local testing for release.
+
+Release evidence (2026-10-05): applied shared PDF Storage SQL, deployed syntax-validated Firebase rules, and published Hosting. `scripts/test-cloud-files.mjs` verified actual Master/Settings PDF uploads/downloads, immutability, PDF room creation/switching, synchronized positions, denied unauthorized default/deletion changes, default protection and active tombstones; restored the original default and removed disposable files/rooms. Existing cloud screenshot-library checks also passed. All 57 unit tests, type checking and deployment build passed. Source is published through the unified-file-library release PR.
+
 ## Future backlog: not part of version 1
 
 - [ ] **F-001 - Add a built-in song index.** As a musician, I can choose a song name to navigate to its page. Acceptance when scoped: versioned mapping agrees with the current PDF, including index-page offsets.

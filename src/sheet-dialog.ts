@@ -1,26 +1,29 @@
 import { inspectCaptures, autoStitch, exportSegments, type Capture, type PreparedSegment } from './screenshot-import';
-import type { ImageSheet } from './sheets';
+import type { SharedFile } from './sheets';
+import { validatePdfUpload } from './songbook';
 export interface ScreenshotDestination {
+  uploadPdf(file: File, id: string): Promise<string>;
   uploadSegment(blob: Blob, sheetId: string, index: number): Promise<string>;
-  saveSong(song: ImageSheet): Promise<void>;
-  changeSheet?(song: ImageSheet): Promise<void>;
+  saveSong(song: SharedFile): Promise<void>;
+  changeSheet?(song: SharedFile): Promise<void>;
 }
 export interface SheetDialogOptions { libraryOnly?: boolean; onSaved?: () => void | Promise<void> }
 
 /** All stitching stays on this device; publish only after every segment uploads. */
 export function showSheetDialog(service: ScreenshotDestination, initialFiles?: File[], options: SheetDialogOptions = {}): () => void {
   const dialog = document.createElement('dialog'); dialog.className = 'sheet-dialog';
-  dialog.innerHTML = `<button class="dialog-close icon-button" aria-label="Close screenshots">×</button><h2>Share screenshots</h2><p>Capture the page from top to bottom, with overlapping content. Keep the same zoom in every screenshot. Set transposition on the website before capturing.</p><label>Song name (optional)<input class="sheet-title" maxlength="120" placeholder="Leave blank to use the screenshot name"></label><label class="secondary sheet-picker">Choose screenshots<input type="file" accept="image/png,image/jpeg,image/webp" multiple></label><p class="sheet-status" role="status"></p><ol class="capture-list"></ol><div class="sheet-actions"><button class="secondary auto-stitch" disabled>Auto stitch</button><button class="secondary preview-sheet" disabled>Update preview</button><button class="primary publish-sheet" disabled>Share with room</button></div><div class="sheet-preview" aria-label="Stitched preview"></div>`;
+  dialog.innerHTML = `<button class="dialog-close icon-button" aria-label="Close screenshots">×</button><h2>Add file/song</h2><p>Choose one PDF, or one or more screenshots. For screenshots, capture the page from top to bottom, with overlapping content. Keep the same zoom in every screenshot. Set transposition on the website before capturing.</p><label>File/song name (optional)<input class="sheet-title" maxlength="120" placeholder="Leave blank to use the file name"></label><label class="secondary sheet-picker">Choose PDF or screenshots<input type="file" accept="application/pdf,.pdf,image/png,image/jpeg,image/webp" multiple></label><p class="sheet-status" role="status"></p><ol class="capture-list"></ol><div class="sheet-actions"><button class="secondary auto-stitch" disabled>Auto stitch</button><button class="secondary preview-sheet" disabled>Update preview</button><button class="primary publish-sheet" disabled>Share with room</button></div><div class="sheet-preview" aria-label="Stitched preview"></div>`;
   document.body.append(dialog); dialog.showModal();
   const get = <T extends HTMLElement>(selector: string) => dialog.querySelector<T>(selector)!;
   const status = get<HTMLParagraphElement>('.sheet-status');
   const input = get<HTMLInputElement>('input[type=file]');
   const auto = get<HTMLButtonElement>('.auto-stitch'), preview = get<HTMLButtonElement>('.preview-sheet'), publish = get<HTMLButtonElement>('.publish-sheet');
-  if (options.libraryOnly) { get('h2').textContent = 'Add song'; publish.textContent = 'Save song'; }
+  if (options.libraryOnly) { publish.textContent = 'Save to library'; }
+  let pdf: File | undefined;
   let captures: Capture[] = [], segments: PreparedSegment[] = [], urls: string[] = [], busy = false, closed = false;
   const progress = (text: string) => { if (!closed) status.textContent = text; };
   const clearPreview = () => { urls.forEach(URL.revokeObjectURL); urls = []; segments = []; get('.sheet-preview').replaceChildren(); publish.disabled = true; };
-  const controls = () => { dialog.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input,button').forEach(element => element.disabled = busy); auto.disabled = busy || !captures.length; preview.disabled = busy || !captures.length; publish.disabled = busy || !segments.length; };
+  const controls = () => { dialog.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input,button').forEach(element => element.disabled = busy); auto.hidden = preview.hidden = Boolean(pdf); auto.disabled = busy || !captures.length; preview.disabled = busy || !captures.length; publish.disabled = busy || (!segments.length && !pdf); };
   const close = () => { if (closed) return; closed = true; clearPreview(); dialog.close(); dialog.remove(); captures = []; };
   get<HTMLButtonElement>('.dialog-close').onclick = close;
   dialog.addEventListener('cancel', event => { if (busy) event.preventDefault(); });
@@ -57,17 +60,34 @@ export function showSheetDialog(service: ScreenshotDestination, initialFiles?: F
     const uncertain = captures.slice(1).filter(capture => capture.matched === false).length;
     progress(uncertain ? `${uncertain} join(s) could not be matched confidently. Review the preview; adjust the crops if needed.` : `Preview ready. Check the joins, then ${options.libraryOnly ? 'save the song' : 'share with your room'}.`);
   };
-  const loadFiles = (files: File[]) => work(async () => { clearPreview(); captures = []; renderList(); captures = await inspectCaptures(files, progress); await autoStitch(captures, progress); if (closed) return; renderList(); await makePreview(); });
+  const loadFiles = (files: File[]) => work(async () => {
+    clearPreview(); pdf = undefined; captures = []; get('.sheet-preview').classList.remove('pdf-upload-preview'); renderList();
+    const pdfs = files.filter(file => file.type === 'application/pdf' || /\.pdf$/i.test(file.name));
+    if (pdfs.length) {
+      if (files.length !== 1) throw new Error('Choose one PDF at a time, or choose screenshots without a PDF.');
+      const file = pdfs[0]; validatePdfUpload(file.size, new Uint8Array(await file.slice(0, 1024).arrayBuffer()));
+      pdf = file; get('.sheet-preview').classList.add('pdf-upload-preview'); get('.sheet-preview').textContent = `${file.name} | ${(file.size / 1024 / 1024).toFixed(1)} MB`;
+      progress('PDF ready. Enter an optional name, then save.'); return;
+    }
+    captures = await inspectCaptures(files, progress); await autoStitch(captures, progress);
+    if (closed) return; renderList(); await makePreview();
+  });
   input.onchange = () => void loadFiles(Array.from(input.files || []));
   auto.onclick = () => void work(async () => { clearPreview(); await autoStitch(captures, progress); if (closed) return; renderList(); await makePreview(); });
   preview.onclick = () => void work(makePreview);
   publish.onclick = () => void work(async () => {
-    const title = get<HTMLInputElement>('.sheet-title').value.trim() || captures[0]?.name.replace(/\.[^.]+$/, '').slice(0, 120) || 'Untitled song';
+    const title = get<HTMLInputElement>('.sheet-title').value.trim() || (pdf?.name || captures[0]?.name)?.replace(/\.[^.]+$/, '').slice(0, 120) || 'Untitled song';
     const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, '0')).join('');
-    const uploaded = [];
-    for (const [index, segment] of segments.entries()) { if (closed) return; progress(`Uploading ${index + 1} / ${segments.length}…`); const url = await service.uploadSegment(segment.blob, id, index); uploaded.push({ url, width: segment.width, height: segment.height }); }
-    if (closed) return;
-    const song = { id, title, segments: uploaded };
+    let song: SharedFile;
+    if (pdf) {
+      progress('Uploading PDF...');
+      song = { id, title, pdfUrl: await service.uploadPdf(pdf, id) };
+    } else {
+      const uploaded = [];
+      for (const [index, segment] of segments.entries()) { if (closed) return; progress(`Uploading ${index + 1} / ${segments.length}…`); const url = await service.uploadSegment(segment.blob, id, index); uploaded.push({ url, width: segment.width, height: segment.height }); }
+      if (closed) return;
+      song = { id, title, segments: uploaded };
+    }
     progress('Saving song...'); await service.saveSong(song);
     if (!options.libraryOnly && service.changeSheet) {
       try { await service.changeSheet(song); } catch (error) { progress(`Song saved to the library, but could not open it in this room: ${error instanceof Error ? error.message : 'Please reconnect.'}`); return; }

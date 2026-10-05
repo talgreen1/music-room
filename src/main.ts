@@ -8,6 +8,7 @@ import { PdfScrollbar } from './scrollbar';
 import { FollowerSync } from './follower-sync';
 import { showSettings, showSettingsDialog } from './settings';
 import { showSongLibrary } from './song-dialog';
+import { isPdfFile } from './sheets';
 import { showSheetDialog } from './sheet-dialog';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
@@ -131,7 +132,7 @@ async function openRoom(code: string) {
   screenshots.onclick = () => { dismissMenu(); closeSheet?.(); closeSheet = showSheetDialog(service); };
   pdfButton.onclick = async () => { pdfButton.disabled = true; try { await service.changeSheet(); } catch (error) { message(errorText(error)); } finally { if (token === generation) updateFollow(); } };
   publisher = new PositionPublisher(position => service.publish(position), error => message(errorText(error)));
-  viewer.onPage = page => { $<HTMLInputElement>('#page').value = String(page); followerPage.textContent = room?.sheet ? room.sheet.title : `Page ${page} / ${viewer?.count || '…'}`; };
+  viewer.onPage = page => { $<HTMLInputElement>('#page').value = String(page); followerPage.textContent = room?.sheet && !isPdfFile(room.sheet) ? room.sheet.title : `Page ${page} / ${viewer?.count || '…'}`; };
   viewer.onPosition = position => {
     scrollbar?.refresh();
     $('#zoom').textContent = `${Math.round(position.zoom * 100)}%`;
@@ -165,8 +166,8 @@ async function openRoom(code: string) {
     for (const selector of ['#first-page', '#previous', '#next']) $(selector).hidden = !master;
     for (const selector of ['#zoom-out', '#zoom-in', '.toolbar-divider']) $(selector).hidden = true;
     $('#zoom').hidden = master;
-    $('#page-form').hidden = !master || Boolean(room?.sheet);
-    for (const selector of ['#previous', '#next']) $(selector).hidden = !master || Boolean(room?.sheet);
+    $('#page-form').hidden = !master || Boolean(room?.sheet && !isPdfFile(room.sheet));
+    for (const selector of ['#previous', '#next']) $(selector).hidden = !master || Boolean(room?.sheet && !isPdfFile(room.sheet));
     songsButton.hidden = !master; songsButton.disabled = !ready || connection !== 'Connected';
     screenshots.hidden = !master; screenshots.disabled = !ready || connection !== 'Connected';
     pdfButton.hidden = !master || !room?.sheet; pdfButton.disabled = !ready || connection !== 'Connected';
@@ -213,7 +214,7 @@ async function openRoom(code: string) {
       recovery.hidden = true; pdfFrame.hidden = false; $('.toolbar').hidden = false;
       $<HTMLButtonElement>('#share').disabled = false;
       try {
-        if (next.sheet) await viewer!.loadSheet(next.sheet); else await viewer!.load(next.pdfUrl);
+        if (next.sheet && !isPdfFile(next.sheet)) await viewer!.loadSheet(next.sheet); else await viewer!.load(next.sheet && isPdfFile(next.sheet) ? next.sheet.pdfUrl : next.pdfUrl);
         if (token !== generation || revision !== sourceRevision) return;
         loadedSource = source; loadingSource = '';
         publisher = new PositionPublisher(position => service.publish(position), error => message(errorText(error)));

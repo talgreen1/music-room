@@ -31,7 +31,7 @@ describe('persistent saved songs', () => {
     expect(await new SongLibrary(folder).list()).toEqual([]);
     await library.cleanup(new Set());
     await expect(readFile(join(folder, 'sheets', `${'b'.repeat(32)}.jpg`))).rejects.toThrow();
-    expect(JSON.parse(await readFile(join(folder, 'songs.json'), 'utf8'))).toEqual({});
+    expect(JSON.parse(await readFile(join(folder, 'songs.json'), 'utf8'))).toEqual({ version: 2, defaultId: 'pdf', files: {} });
   });
   it('serializes concurrent writes without losing either song', async () => {
     const folder = await fixture(), library = new SongLibrary(folder);
@@ -51,4 +51,32 @@ describe('persistent saved songs', () => {
     expect(unusedDeletedSongs(records, new Set([song.id]))).toEqual([]);
     expect(unusedDeletedSongs(records, new Set())).toHaveLength(1);
   });
+  it('migrates existing image songs and persists a PDF default across restarts', async () => {
+    const folder = await fixture();
+    await writeFile(join(folder, 'songs.json'), JSON.stringify({ [sheet.id]: { ...sheet, ownerId: 'creator', createdAt: 1000 } }));
+    const library = new SongLibrary(folder);
+    expect(await library.defaultFile()).toBe('pdf');
+    const pdf = { id: 'd'.repeat(32), title: 'Another book', pdfUrl: `/api/songbooks/${'e'.repeat(32)}.pdf` };
+    await library.save(pdf, 'creator', '123456'); await library.setDefault(pdf.id);
+    const restarted = new SongLibrary(folder);
+    expect(await restarted.defaultFile()).toBe(pdf.id);
+    expect(await restarted.list()).toHaveLength(2);
+    await expect(restarted.delete(pdf.id)).rejects.toThrow('another default');
+    await expect(restarted.setDefault('f'.repeat(32))).rejects.toThrow('available');
+    expect(await restarted.defaultFile()).toBe(pdf.id);
+    await restarted.setDefault(sheet.id);
+    expect(await new SongLibrary(folder).defaultFile()).toBe(sheet.id);
+  });
+  it('keeps deleted PDFs in active rooms, then cleans up their stored bytes', async () => {
+    const folder = await fixture(); await mkdir(join(folder, 'songbooks'));
+    const filename = `${'e'.repeat(32)}.pdf`;
+    await writeFile(join(folder, 'songbooks', filename), '%PDF-1.4');
+    const pdf = { id: 'd'.repeat(32), title: 'Book', pdfUrl: `/api/songbooks/${filename}` };
+    const library = new SongLibrary(folder); await library.save(pdf, 'creator'); await library.delete(pdf.id);
+    await library.cleanup(new Set([pdf.id]));
+    expect(await readFile(join(folder, 'songbooks', filename), 'utf8')).toBe('%PDF-1.4');
+    await library.cleanup(new Set());
+    await expect(readFile(join(folder, 'songbooks', filename))).rejects.toThrow();
+  });
+
 });

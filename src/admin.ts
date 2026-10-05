@@ -2,9 +2,10 @@ import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, inMemoryPersistence, setPersistence } from 'firebase/auth';
 import { getDatabase, get, ref, remove, set, update, serverTimestamp, runTransaction } from 'firebase/database';
 import { cloudConfigured, localServerConfigured, songbook } from './rooms';
-import { validateSongbook, validatePdfUpload, type Songbook } from './songbook';
-import { validateSheet, MAX_IMAGE_BYTES, type ImageSheet } from './sheets';
+import { validateSongbook, type Songbook } from './songbook';
+import { validateFile, isPdfFile, fileUrls, MAX_IMAGE_BYTES, type SharedFile } from './sheets';
 import { availableSongs, unusedDeletedSongs, type SavedSong } from './song-library';
+import { uploadLibraryPdf } from './file-upload';
 import type { Room } from './model';
 import { settingsCredential } from './settings-password.mjs';
 
@@ -46,8 +47,8 @@ export class SettingsService {
     if (!response.ok) throw new Error('Screenshot upload failed. Check Storage configuration.');
     return `${url}/storage/v1/object/public/room-sheets/${filename}`;
   }
-  async saveSong(sheet: ImageSheet): Promise<void> {
-    const song = validateSheet(sheet);
+  async saveSong(sheet: SharedFile): Promise<void> {
+    const song = validateFile(sheet);
     if (localServerConfigured) { await this.request('songs', 'POST', song); return; }
     const { auth, db } = this.cloud(); const user = auth.currentUser; if (!user) throw new Error('Sign in to Settings.');
     const result = await runTransaction(ref(db, `songs/${song.id}`), current => current === null ? { ...song, ownerId: user.uid, createdAt: serverTimestamp() } : undefined, { applyLocally: false });
@@ -76,9 +77,10 @@ export class SettingsService {
     for (const song of unusedDeletedSongs(records, activeIds)) {
       const url = import.meta.env.VITE_SUPABASE_URL, key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
       if (!url || !key || !auth.currentUser) throw new Error('Song removed from the library. Image cleanup requires configured Storage and a Settings login.');
-      const prefix = `${url}/storage/v1/object/public/room-sheets/`;
-      const prefixes = song.segments.map(segment => { if (!segment.url.startsWith(`${prefix}${song.ownerId}/${song.id}/`)) throw new Error('Invalid saved song storage path.'); return segment.url.slice(prefix.length); });
-      const response = await fetch(`${url}/storage/v1/object/room-sheets`, { method: 'DELETE', headers: { apikey: key, Authorization: `Bearer ${await auth.currentUser.getIdToken()}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ prefixes }) });
+      const bucket = isPdfFile(song) ? 'room-pdfs' : 'room-sheets';
+      const prefix = `${url}/storage/v1/object/public/${bucket}/`;
+      const prefixes = fileUrls(song).map(fileUrl => { if (!fileUrl.startsWith(`${prefix}${song.ownerId}/${song.id}/`)) throw new Error('Invalid saved song storage path.'); return fileUrl.slice(prefix.length); });
+      const response = await fetch(`${url}/storage/v1/object/${bucket}`, { method: 'DELETE', headers: { apikey: key, Authorization: `Bearer ${await auth.currentUser.getIdToken()}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ prefixes }) });
       if (!response.ok) throw new Error('Song removed from the library. Image cleanup failed; refresh to retry after checking Storage permissions.');
       await remove(ref(db, `songs/${song.id}`));
     }
@@ -92,22 +94,16 @@ export class SettingsService {
     if (localServerConfigured) await this.request('songbook', 'PUT', descriptor);
     else await set(ref(this.cloud().db, 'songbook'), descriptor);
   }
-  async uploadPdf(file: File): Promise<string> {
-    validatePdfUpload(file.size, new Uint8Array(await file.slice(0, 1024).arrayBuffer()));
-    if (localServerConfigured) {
-      const response = await fetch('/api/admin/upload', { method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: file });
-      const result = await response.json(); if (!response.ok) throw new Error(result.error || 'PDF upload failed.'); return result.pdfUrl;
-    }
-    const url = import.meta.env.VITE_SUPABASE_URL;
-    const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-    if (!url || !key) throw new Error('PDF uploads require Supabase configuration.');
-    const user = this.cloud().auth.currentUser;
-    if (!user) throw new Error('Sign in to Settings.');
-    const filename = `${Date.now()}-${crypto.randomUUID()}.pdf`;
-    const response = await fetch(`${url}/storage/v1/object/songbooks/${filename}`, {
-      method: 'POST', headers: { apikey: key, Authorization: `Bearer ${await user.getIdToken()}`, 'Content-Type': 'application/pdf', 'x-upsert': 'false', 'cache-control': 'max-age=31536000' }, body: file
-    });
-    if (!response.ok) throw new Error('PDF upload failed. Check Supabase availability and administrator permissions.');
-    return `${url}/storage/v1/object/public/songbooks/${filename}`;
+  async defaultFile(): Promise<string> {
+    if (localServerConfigured) return (await (await fetch('/api/default-file')).json()).id;
+    return (await get(ref(this.cloud().db, 'defaultFile'))).val() || 'pdf';
+  }
+  async setDefault(id: string) {
+    if (id !== 'pdf' && !/^[a-f0-9]{32}$/.test(id)) throw new Error('Invalid file ID.');
+    if (localServerConfigured) await this.request('default-file', 'PUT', { id });
+    else await set(ref(this.cloud().db, 'defaultFile'), id);
+  }
+  async uploadPdf(file: File, id: string): Promise<string> {
+    return uploadLibraryPdf(file, id, localServerConfigured ? null : this.cloud().auth.currentUser, localServerConfigured ? '/api/admin/upload' : undefined);
   }
 }

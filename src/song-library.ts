@@ -1,7 +1,7 @@
-import { validateSheet, type ImageSheet } from './sheets';
-export interface SavedSong extends ImageSheet { ownerId: string; roomCode?: string; createdAt: number; deletedAt?: number }
+import { validateFile, type SharedFile } from './sheets';
+export type SavedSong = SharedFile & { ownerId: string; roomCode?: string; createdAt: number; deletedAt?: number };
 export function validateSavedSong(value: SavedSong): SavedSong {
-  const sheet = validateSheet(value);
+  const sheet = validateFile(value);
   if (typeof value.ownerId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(value.ownerId) || (value.roomCode !== undefined && !/^\d{6}$/.test(value.roomCode)) || !Number.isFinite(value.createdAt) || value.createdAt < 0 || (value.deletedAt !== undefined && (!Number.isFinite(value.deletedAt) || value.deletedAt < 0))) throw new Error('Invalid saved song.');
   return { ...sheet, ownerId: value.ownerId, ...(value.roomCode === undefined ? {} : { roomCode: value.roomCode }), createdAt: value.createdAt, ...(value.deletedAt === undefined ? {} : { deletedAt: value.deletedAt }) };
 }
