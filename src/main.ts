@@ -6,7 +6,7 @@ import { SongbookViewer } from './viewer';
 import { PositionPublisher } from './sync';
 import { PdfScrollbar } from './scrollbar';
 import { FollowerSync } from './follower-sync';
-import { showSettings } from './settings';
+import { showSettings, showSettingsDialog } from './settings';
 import { showSongLibrary } from './song-dialog';
 import { showSheetDialog } from './sheet-dialog';
 
@@ -57,6 +57,11 @@ async function openRoom(code: string) {
   cleanup(); const token = generation; master = false; following = true; connection = 'Reconnecting…';
   app.innerHTML = `<main class="session"><header class="room-header"><button id="leave" class="icon-button" aria-label="Leave room">←</button><div class="room-identity"><span class="small-label">ROOM ${safe(code)}</span><strong id="role">Joining your group…</strong></div><span id="connection" class="connection" role="status">Reconnecting…</span><button id="share" class="secondary compact">Share</button></header>${!cloudConfigured ? localServerConfigured ? '<div class="demo-bar">LOCAL DEVELOPMENT · Shared across browsers</div>' : '<div class="demo-bar">BROWSER-ONLY DEMO · Same-browser tabs only</div>' : ''}<div id="notice" class="notice room-notice" role="alert" hidden></div><div id="pdf" class="pdf-host" tabindex="0" aria-label="Songbook"></div><nav class="toolbar" aria-label="Songbook controls"><button id="previous" class="icon-button" aria-label="Previous page">‹</button><form id="page-form"><label class="sr-only" for="page">Page number</label><input id="page" type="number" min="1" value="1" aria-label="Page number"/><span id="count"> / —</span></form><button id="next" class="icon-button" aria-label="Next page">›</button><div class="toolbar-divider"></div><button id="zoom-out" class="icon-button" aria-label="Zoom out">−</button><span id="zoom">100%</span><button id="zoom-in" class="icon-button" aria-label="Zoom in">+</button></nav></main><dialog id="share-dialog"><form method="dialog"><button class="dialog-close icon-button" aria-label="Close">×</button></form><p class="eyebrow">INVITE YOUR GROUP</p><h2>Room ${safe(code)}</h2><canvas id="qr"></canvas><p id="share-url"></p><button id="copy" class="primary">Copy room link</button><p id="copy-status" role="status"></p></dialog>`;
   $('#leave').onclick = () => { history.pushState({}, '', '/'); home(); };
+  const settingsButton = document.createElement('button');
+  settingsButton.className = 'icon-button'; settingsButton.textContent = '⚙';
+  settingsButton.setAttribute('aria-label', 'Settings'); settingsButton.title = 'Settings';
+  $('.room-header').append(settingsButton);
+  settingsButton.onclick = () => { closeSettings?.(); closeSettings = showSettingsDialog(); };
   $('#share').onclick = async () => {
     const url = new URL(location.href); url.search = `?room=${code}`;
     const dialog = $<HTMLDialogElement>('#share-dialog'); $('#share-url').textContent = url.href; dialog.showModal();

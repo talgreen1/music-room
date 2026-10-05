@@ -14,7 +14,8 @@ export function showSettings(app: HTMLElement, back: () => void) {
   const $ = <T extends HTMLElement = HTMLElement>(selector: string) => app.querySelector<T>(selector)!;
   const report = (text: string) => { if (alive) $('#settings-status').textContent = text; };
   const fail = (error: unknown) => report(error instanceof Error ? error.message : 'Settings operation failed.');
-  const leave = () => { alive = false; closePreview?.(); void service.logout().catch(() => {}); back(); };
+  const dispose = () => { if (!alive) return; alive = false; closePreview?.(); void service.logout().catch(() => {}); };
+  const leave = () => { dispose(); back(); };
   $('#settings-back').onclick = leave;
   const lock = async () => { closePreview?.(); await service.logout(); if (!alive) return; $('#settings-login').hidden = false; $('#settings-content').hidden = true; $('#settings-logout').hidden = true; $('#settings-rooms').replaceChildren(); $('#settings-songs').replaceChildren(); };
   $('#settings-logout').onclick = () => void lock().catch(fail);
@@ -87,5 +88,21 @@ export function showSettings(app: HTMLElement, back: () => void) {
     } catch (error) { fail(error); }
     finally { if (alive) button.disabled = false; }
   };
-  return () => { alive = false; closePreview?.(); void service.logout().catch(() => {}); };
+  return dispose;
+}
+
+export function showSettingsDialog(): () => void {
+  const dialog = document.createElement('dialog'); dialog.className = 'room-settings-dialog';
+  dialog.setAttribute('aria-label', 'Room settings');
+  const content = document.createElement('div'); dialog.append(content); document.body.append(dialog);
+  let closed = false;
+  const close = () => {
+    if (closed) return; closed = true;
+    dispose(); dialog.close(); dialog.remove();
+  };
+  const dispose = showSettings(content, close);
+  dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
+  dialog.addEventListener('close', close);
+  dialog.showModal();
+  return close;
 }

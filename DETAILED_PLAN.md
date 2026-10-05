@@ -301,6 +301,11 @@ The user-approved solution replaces live website casting with browser-side autom
 
 Release evidence (2026-10-05): user approved local testing. All 52 unit tests, type checking, PDF rendering compatibility and cloud screenshot/PDF room smoke checks passed. The screenshot test covers real JPEG download, immutability, foreign upload rejection, bounded tiles, source changes, reconnect, deletion and cleanup. Physical-device coverage in SS-006 remains open.
 
+- [x] **SS-015 - Open administrator Settings from an active room.** Compact Settings gear opens a password-protected dialog without routing away, destroying the viewer or leaving the room. Nested song imports/previews work; closing Settings locks its separate administrator session and retains the room's view. Local browser verified page 37 and 110% zoom preserved after opening Settings and its Add song dialog.
+- [x] **SS-016 - Use new Settings songs in existing rooms.** Song chooser loads the current shared catalog on each open and includes Refresh songs for already-open choosers. HTTP integration creates two rooms before a Settings import, verifies neither room changes during import and confirms both Masters can then select the new song. 52 unit tests, type checking and build pass.
+
+SS-015/SS-016 release (2026-10-05): user approved testing. All 52 tests, type checking, updated Settings integration and guarded production build passed. Deployed to Firebase Hosting; existing cloud library and permissions required no changes.
+
 ## Future backlog: not part of version 1
 
 - [ ] **F-001 - Add a built-in song index.** As a musician, I can choose a song name to navigate to its page. Acceptance when scoped: versioned mapping agrees with the current PDF, including index-page offsets.
