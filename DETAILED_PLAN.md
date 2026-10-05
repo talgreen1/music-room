@@ -278,6 +278,29 @@ Release evidence for MR-044 through MR-046: user confirmed the final link, gestu
 
 Release evidence for MR-048: user confirmed the final compact controls, Follower sync, and Master-only scrollbar changes work on 2026-10-03. All 32 tests and the guarded deployment build passed, as did rendering actual PDF pages with newer built-ins initially absent. Frontend deployed to https://talgreen-music-room.web.app. Specific iPhone/rotation coverage remains tracked separately.
 
+## Screenshot sharing
+
+The user-approved solution replaces live website casting with browser-side automatic screenshot stitching. The Master chooses transposition on the original website, captures overlapping screenshots, reviews the stitched preview and shares it. Followers use the existing synchronized viewer. See [WEBSITE_CASTING_DESIGN.md](WEBSITE_CASTING_DESIGN.md) for architecture, limits and verification.
+
+- [x] **SS-001 - Import and order screenshots.** Master-only dialog, PNG/JPEG/WebP validation, image bounds, ordering and crop adjustment.
+- [x] **SS-002 - Automatically stitch and preview.** Textured overlap matching, stationary bars, conservative ambiguous fallback, bounded JPEG tiles and continuous preview.
+- [x] **SS-003 - Share source atomically.** Local authenticated uploads, cloud upload client and manifest; source-tagged positions reject stale writes and Follower source changes.
+- [x] **SS-004 - Synchronize screenshot zoom and pan.** Reuse gestures and three-second Follower browsing pause; separate-origin browser checks of image loading, synchronized zoom and compact role-specific controls.
+- [x] **SS-005 - Return to the room PDF.** Keep pinned PDF metadata; Master can switch the group back to page 1.
+- [ ] **SS-006 - Test real phone captures.** Android/iPhone upload, seams, large images, pinch/pan and reconnect.
+- [x] **SS-007 - Configure cloud and release.** Applied screenshot Storage SQL and deployed validated Firebase rules before Hosting publication on 2026-10-05. Real-cloud checks verified uploads/downloads, denied Follower writes, stale-source rejection and reconnect to the latest source/position.
+
+- [x] **SS-008 - Optional song names and permanent library.** Empty names fall back to the first screenshot filename; save before sharing; local catalog persists across restarts and cloud catalog is independent of rooms.
+- [x] **SS-009 - Master chooses PDF or saved song.** Compact Songs button and source chooser; reuse from any room without uploads; deleted entries cannot be selected.
+- [x] **SS-010 - Settings song list, preview and deletion.** Zoom/pan preview, confirmed administrator deletion, active-copy retention, deferred tile cleanup on refresh or room deletion.
+- [x] **SS-011 - Local library lifecycle verification.** Persistence, concurrency, duplicate/corrupt-catalog protection, cross-room reuse, authorization, deleted-selection denial and active-reference cleanup checks pass.
+- [x] **SS-012 - Cloud saved-library verification and release.** Catalog rules and administrator Storage cleanup policies deployed. `scripts/test-cloud-sheets.mjs` verified shared selection, deleted-selection denial, ongoing active-room position writes, actual JPEG uploads and administrator deletion. Disposable test records and files were cleaned up.
+
+- [x] **SS-013 - Add songs directly from Settings.** Unlocked administrator imports screenshots with the same optional name/stitch/crop preview, saves to the shared library without a room, and sees the song list refresh. Local HTTP checks deny anonymous imports, reject invalid/duplicate data, confirm no room is created and verify a later Master can select the saved song.
+- [x] **SS-014 - Verify room-free Settings imports in the cloud.** Live-cloud check confirmed Settings can upload/register without room metadata, Followers cannot create library entries without an owned room, and another Master can select the administrator's song. Published to Firebase Hosting after checks passed.
+
+Release evidence (2026-10-05): user approved local testing. All 52 unit tests, type checking, PDF rendering compatibility and cloud screenshot/PDF room smoke checks passed. The screenshot test covers real JPEG download, immutability, foreign upload rejection, bounded tiles, source changes, reconnect, deletion and cleanup. Physical-device coverage in SS-006 remains open.
+
 ## Future backlog: not part of version 1
 
 - [ ] **F-001 - Add a built-in song index.** As a musician, I can choose a song name to navigate to its page. Acceptance when scoped: versioned mapping agrees with the current PDF, including index-page offsets.

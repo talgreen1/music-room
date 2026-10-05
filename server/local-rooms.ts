@@ -2,9 +2,11 @@ import { randomInt, randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
 import { MAX_ZOOM, MIN_ZOOM, type Room, type Position } from '../src/model';
+import { SongLibrary } from './song-library';
 import { AdminSessions } from './admin-auth';
 import { validateSongbook, validatePdfUpload, MAX_PDF_BYTES, type Songbook } from '../src/songbook';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { validateSheet, validateJpeg, MAX_IMAGE_BYTES, type ImageSheet } from '../src/sheets';
 
 type Listener = (room: Room | null) => void;
 type Entry = { room: Room; token: string; listeners: Set<Listener> };
@@ -25,13 +27,26 @@ export class LocalRoomStore {
     throw new Error('Could not reserve a room code.');
   }
   read(code: string) { const entry = this.rooms.get(code); return entry && entry.room.expiresAt > this.now() ? structuredClone(entry.room) : null; }
+  authorized(code: string, token: string) { const entry = this.rooms.get(code); return Boolean(entry && entry.room.expiresAt > this.now() && token && token === entry.token); }
+  changeSheet(code: string, token: string, value?: ImageSheet): 'ok' | 'missing' | 'forbidden' | 'invalid' {
+    if (!this.read(code)) return 'missing';
+    if (!this.authorized(code, token)) return 'forbidden';
+    const entry = this.rooms.get(code)!;
+    let sheet: ImageSheet | undefined;
+    try { sheet = value !== undefined ? validateSheet(value) : undefined; } catch { return 'invalid'; }
+    if (sheet) entry.room.sheet = sheet; else delete entry.room.sheet;
+    entry.room.position = { page: 1, offset: 0, horizontal: 0, zoom: 1, sourceId: sheet?.id || 'pdf', sequence: (entry.room.position.sequence || 0) + 1, updatedAt: this.now() };
+    for (const listener of entry.listeners) listener(structuredClone(entry.room));
+    return 'ok';
+  }
   publish(code: string, token: string, position: Position): 'ok' | 'missing' | 'forbidden' | 'invalid' {
     const entry = this.rooms.get(code);
     if (!entry || entry.room.expiresAt <= this.now()) return 'missing';
     if (!token || token !== entry.token) return 'forbidden';
+    if ((position.sourceId || 'pdf') !== (entry.room.sheet?.id || 'pdf')) return 'invalid';
     const horizontal = position.horizontal ?? 0;
     if (!Number.isInteger(position.page) || position.page < 1 || position.page > 10000 || !Number.isFinite(position.offset) || position.offset < 0 || position.offset > 1 || !Number.isFinite(position.zoom) || position.zoom < MIN_ZOOM || position.zoom > MAX_ZOOM || !Number.isFinite(horizontal) || horizontal < 0 || horizontal > 1) return 'invalid';
-    entry.room.position = { page: position.page, offset: position.offset, zoom: position.zoom, horizontal, sequence: (entry.room.position.sequence || 0) + 1, updatedAt: this.now() };
+    entry.room.position = { page: position.page, offset: position.offset, zoom: position.zoom, horizontal, sourceId: position.sourceId || 'pdf', sequence: (entry.room.position.sequence || 0) + 1, updatedAt: this.now() };
     for (const listener of entry.listeners) listener(structuredClone(entry.room));
     return 'ok';
   }
@@ -66,9 +81,25 @@ async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
   return parsed as Record<string, unknown>;
 }
 
+async function uploadScreenshot(req: IncomingMessage) {
+  const chunks: Buffer[] = []; let size = 0;
+  for await (const chunk of req) { size += chunk.length; if (size > MAX_IMAGE_BYTES) throw new Error('Screenshot segment is too large.'); chunks.push(Buffer.from(chunk)); }
+  const bytes = Buffer.concat(chunks); validateJpeg(bytes);
+  const filename = `${randomBytes(16).toString('hex')}.jpg`;
+  await mkdir('.local-data/sheets', { recursive: true }); await writeFile(`.local-data/sheets/${filename}`, bytes, { flag: 'wx' });
+  return { url: `/api/sheets/${filename}` };
+}
+async function localSong(input: unknown) {
+  const song = validateSheet(input as ImageSheet);
+  for (const segment of song.segments) { const name = /^\/api\/sheets\/([a-f0-9]{32}\.jpg)$/.exec(segment.url)?.[1]; if (!name) throw new Error('Invalid local screenshot URL.'); await readFile(`.local-data/sheets/${name}`); }
+  return song;
+}
+
 /** Development-only shared backend. No cloud accounts or extra packages needed. */
 export function localRoomsPlugin(env: Record<string, string> = {}): Plugin {
   const store = new LocalRoomStore();
+  const library = new SongLibrary();
+  const activeSongIds = () => new Set(Object.values(store.list()).flatMap(room => room.sheet ? [room.sheet.id] : []));
   const auth = env.MUSIC_ADMIN_PASSWORD ? new AdminSessions(env.MUSIC_ADMIN_PASSWORD) : undefined;
   let current: Songbook = { pdfUrl: env.VITE_PDF_URL || '/songbooks/songbook-2026-10.pdf', pdfVersion: env.VITE_PDF_VERSION || '2026-10', pdfTitle: env.VITE_PDF_TITLE || 'חוברת שירים' };
   const loaded = readFile('.local-data/songbook.json', 'utf8').then(text => { current = validateSongbook(JSON.parse(text)); }).catch(error => { if (error.code !== 'ENOENT') console.error('Could not read saved songbook configuration', error); });
@@ -79,11 +110,39 @@ export function localRoomsPlugin(env: Record<string, string> = {}): Plugin {
       server.httpServer?.once('close', () => clearInterval(expiry));
       server.middlewares.use((req, res, next) => {
         const url = new URL(req.url || '/', 'http://localhost');
-        if (!url.pathname.startsWith('/api/local-rooms') && !url.pathname.startsWith('/api/admin') && !url.pathname.startsWith('/api/songbooks/') && url.pathname !== '/api/songbook') { next(); return; }
+        if (!url.pathname.startsWith('/api/local-rooms') && !url.pathname.startsWith('/api/admin') && !url.pathname.startsWith('/api/sheets/') && !url.pathname.startsWith('/api/songbooks/') && url.pathname !== '/api/songbook' && url.pathname !== '/api/songs') { next(); return; }
         void (async () => {
           // Prevent other websites from creating/modifying local rooms through the browser.
           if (req.method !== 'GET' && req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) { json(res, 403, { error: 'Origin not allowed.' }); return; }
           await loaded;
+          if (url.pathname === '/api/songs' && req.method === 'GET') { json(res, 200, await library.list()); return; }
+          if (url.pathname.startsWith('/api/sheets/') && req.method === 'GET') {
+            const filename = /^\/api\/sheets\/([a-f0-9]{32}\.jpg)$/.exec(url.pathname)?.[1];
+            if (!filename) { json(res, 404, { error: 'Image not found.' }); return; }
+            try { const bytes = await readFile(`.local-data/sheets/${filename}`); res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': bytes.length, 'Cache-Control': 'public,max-age=31536000,immutable', 'X-Content-Type-Options': 'nosniff' }); res.end(bytes); }
+            catch { json(res, 404, { error: 'Image not found.' }); } return;
+          }
+          const sheetRoute = /^\/api\/local-rooms\/(\d{6})\/(sheet|images|songs)$/.exec(url.pathname);
+          if (sheetRoute) {
+            const code = sheetRoute[1], token = req.headers.authorization?.replace(/^Bearer /, '') || '';
+            if (!store.read(code)) { json(res, 404, { error: 'Room unavailable.' }); return; }
+            if (!store.authorized(code, token)) { json(res, 403, { error: 'Only the Master may share screenshots.' }); return; }
+            if (sheetRoute[2] === 'songs' && req.method === 'POST') {
+              const song = await localSong(await body(req));
+              const saved = await library.save(song, store.read(code)!.masterId, code); json(res, 201, saved); return;
+            }
+            if (sheetRoute[2] === 'sheet' && req.method === 'PUT') {
+              const input = await body(req); if (!Object.hasOwn(input, 'sheet')) throw new Error('Missing sheet.');
+              let sheet: ImageSheet | undefined;
+              if (input.sheet !== null) { const requested = validateSheet(input.sheet as ImageSheet); const saved = await library.get(requested.id); if (!saved) throw new Error('This song is no longer in the library.'); sheet = validateSheet(saved); }
+              const result = store.changeSheet(code, token, sheet);
+              json(res, result === 'ok' ? 200 : 400, result === 'ok' ? { ok: true } : { error: result }); return;
+            }
+            if (sheetRoute[2] === 'images' && req.method === 'POST') {
+              json(res, 201, await uploadScreenshot(req)); return;
+            }
+            json(res, 405, { error: 'Method not allowed.' }); return;
+          }
           if (url.pathname.startsWith('/api/songbooks/') && req.method === 'GET') {
             const filename = /^\/api\/songbooks\/([a-f0-9]{32}\.pdf)$/.exec(url.pathname)?.[1];
             if (!filename) { json(res, 404, { error: 'PDF not found.' }); return; }
@@ -103,6 +162,11 @@ export function localRoomsPlugin(env: Record<string, string> = {}): Plugin {
               } catch (error) { json(res, 401, { error: (error as Error).message }); } return;
             }
             if (!auth.authorized(req.headers.cookie)) { json(res, 401, { error: 'Sign in to Settings.' }); return; }
+            if (url.pathname === '/api/admin/images' && req.method === 'POST') { json(res, 201, await uploadScreenshot(req)); return; }
+            if (url.pathname === '/api/admin/songs' && req.method === 'POST') { const song = await localSong(await body(req)); json(res, 201, await library.save(song, 'settings-admin')); return; }
+            if (url.pathname === '/api/admin/songs' && req.method === 'GET') { await library.cleanup(activeSongIds()); json(res, 200, await library.list()); return; }
+            const songTarget = /^\/api\/admin\/songs\/([a-f0-9]{32})$/.exec(url.pathname);
+            if (songTarget && req.method === 'DELETE') { await library.delete(songTarget[1]); await library.cleanup(activeSongIds()); json(res, 200, { ok: true }); return; }
             if (url.pathname === '/api/admin/upload' && req.method === 'POST') {
               if (Number(req.headers['content-length']) > MAX_PDF_BYTES) { json(res, 413, { error: 'Choose a PDF file up to 30 MB.' }); return; }
               const chunks: Buffer[] = []; let size = 0;
@@ -117,7 +181,7 @@ export function localRoomsPlugin(env: Record<string, string> = {}): Plugin {
             }
             if (url.pathname === '/api/admin/rooms' && req.method === 'GET') { json(res, 200, store.list()); return; }
             const target = /^\/api\/admin\/rooms(?:\/(\d{6}))?$/.exec(url.pathname);
-            if (target && req.method === 'DELETE') { store.delete(target[1]); json(res, 200, { ok: true }); return; }
+            if (target && req.method === 'DELETE') { store.delete(target[1]); await library.cleanup(activeSongIds()); json(res, 200, { ok: true }); return; }
             if (url.pathname === '/api/admin/songbook' && req.method === 'PUT') {
               const value = validateSongbook(await body(req) as unknown as Songbook);
               await mkdir('.local-data', { recursive: true }); await writeFile('.local-data/songbook.json', JSON.stringify(value)); current = value;

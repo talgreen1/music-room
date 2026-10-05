@@ -2,6 +2,28 @@ import { describe, expect, it } from 'vitest';
 import { LocalRoomStore } from '../server/local-rooms';
 const descriptor = { masterId: 'creator', pdfUrl: '/songbook.pdf', pdfVersion: 'one', pdfTitle: 'Book' };
 describe('shared local development rooms', () => {
+  it('atomically switches sheets, rejects Followers and rejects stale source positions', () => {
+    const store = new LocalRoomStore(); const created = store.create(descriptor);
+    const sheet = { id: 'a'.repeat(32), title: 'Chords', segments: [{ url: '/api/sheets/image.jpg', width: 960, height: 2000 }] };
+    expect(store.changeSheet(created.code, 'follower', sheet)).toBe('forbidden');
+    expect(store.read(created.code)?.sheet).toBeUndefined();
+    const sources: string[] = [];
+    store.subscribe(created.code, room => { if (room) { expect(room.position.sourceId || 'pdf').toBe(room.sheet?.id || 'pdf'); sources.push(room.position.sourceId || 'pdf'); } });
+    expect(store.changeSheet(created.code, created.token, sheet)).toBe('ok');
+    const position = { page: 1, offset: .4, horizontal: .7, zoom: 2 };
+    expect(store.publish(created.code, created.token, position)).toBe('invalid');
+    expect(store.publish(created.code, created.token, { ...position, sourceId: sheet.id })).toBe('ok');
+    expect(store.read(created.code)?.position).toMatchObject(position);
+    expect(store.changeSheet(created.code, created.token)).toBe('ok');
+    expect(store.publish(created.code, created.token, { ...position, sourceId: sheet.id })).toBe('invalid');
+    expect(store.read(created.code)?.pdfUrl).toBe(descriptor.pdfUrl);
+    expect(sources).toEqual(['pdf', sheet.id, sheet.id, 'pdf']);
+  });
+  it('rejects malformed sheet replacements without losing the current content', () => {
+    const store = new LocalRoomStore(); const created = store.create(descriptor);
+    for (const value of [false, '', 0, { id: 'bad' }]) expect(store.changeSheet(created.code, created.token, value as never)).toBe('invalid');
+    expect(store.read(created.code)?.position.sequence).toBe(0);
+  });
   it('shares rooms with independent clients without exposing the Master token', () => {
     const store = new LocalRoomStore(); const created = store.create(descriptor);
     expect(store.read(created.code)?.masterId).toBe('creator');

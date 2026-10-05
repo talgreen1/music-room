@@ -1,5 +1,6 @@
-export interface Position { page: number; offset: number; zoom: number; horizontal?: number; sequence?: number; updatedAt?: number }
-export interface Room { masterId: string; pdfUrl: string; pdfVersion: string; pdfTitle: string; createdAt: number; expiresAt: number; position: Position }
+import type { ImageSheet } from './sheets';
+export interface Position { page: number; offset: number; zoom: number; horizontal?: number; sequence?: number; updatedAt?: number; sourceId?: string }
+export interface Room { masterId: string; pdfUrl: string; pdfVersion: string; pdfTitle: string; createdAt: number; expiresAt: number; position: Position; sheet?: ImageSheet }
 const finite = (value: number, fallback: number) => Number.isFinite(value) ? value : fallback;
 export const MIN_ZOOM = 0.75;
 export const MAX_ZOOM = 4;
