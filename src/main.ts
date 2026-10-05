@@ -18,6 +18,7 @@ let publisher: PositionPublisher | undefined;
 let followerSync: FollowerSync | undefined;
 let closeSheet: (() => void) | undefined;
 let closeSettings: (() => void) | undefined;
+let closeMenu: (() => void) | undefined;
 let room: Room | undefined;
 let master = false;
 let following = true;
@@ -30,7 +31,7 @@ const $ = <T extends HTMLElement = HTMLElement>(selector: string) => app.querySe
 const safe = (value: string) => value.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
 const message = (value: string) => { const element = app.querySelector<HTMLElement>('#notice'); if (element) { element.textContent = value; element.hidden = !value; } };
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong. Please try again.';
-function cleanup() { generation++; closeSheet?.(); closeSheet = undefined; closeSettings?.(); closeSettings = undefined; followerSync?.destroy(); followerSync = undefined; publisher?.stop(); publisher = undefined; scrollbar?.destroy(); scrollbar = undefined; viewer?.destroy(); viewer = undefined; service.leave(); room = undefined; ready = false; lastSequence = -1; lastPublished = ''; }
+function cleanup() { generation++; closeMenu?.(); closeMenu = undefined; closeSheet?.(); closeSheet = undefined; closeSettings?.(); closeSettings = undefined; followerSync?.destroy(); followerSync = undefined; publisher?.stop(); publisher = undefined; scrollbar?.destroy(); scrollbar = undefined; viewer?.destroy(); viewer = undefined; service.leave(); room = undefined; ready = false; lastSequence = -1; lastPublished = ''; }
 
 function home() {
   cleanup();
@@ -61,7 +62,26 @@ async function openRoom(code: string) {
   settingsButton.className = 'icon-button'; settingsButton.textContent = '⚙';
   settingsButton.setAttribute('aria-label', 'Settings'); settingsButton.title = 'Settings';
   $('.room-header').append(settingsButton);
-  settingsButton.onclick = () => { closeSettings?.(); closeSettings = showSettingsDialog(); };
+  const menu = document.createElement('dialog'); menu.id = 'room-menu'; menu.className = 'room-menu';
+  menu.setAttribute('aria-label', 'Room menu');
+  menu.innerHTML = '<button class="dialog-close icon-button" aria-label="Close room menu">×</button><h2>Room menu</h2><div class="room-menu-actions"></div>';
+  app.append(menu);
+  const menuActions = menu.querySelector<HTMLElement>('.room-menu-actions')!;
+  const dismissMenu = () => { if (menu.open) menu.close(); settingsButton.setAttribute('aria-expanded', 'false'); };
+  closeMenu = dismissMenu;
+  menu.querySelector<HTMLButtonElement>('.dialog-close')!.onclick = dismissMenu;
+  menu.addEventListener('cancel', event => { event.preventDefault(); dismissMenu(); });
+  menu.addEventListener('close', () => settingsButton.setAttribute('aria-expanded', 'false'));
+  menu.addEventListener('click', event => {
+    if (event.target !== menu) return;
+    const bounds = menu.getBoundingClientRect();
+    if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) dismissMenu();
+  });
+  const openSettings = () => { dismissMenu(); closeSettings?.(); closeSettings = showSettingsDialog(); };
+  settingsButton.onclick = () => {
+    if (!master) { openSettings(); return; }
+    menu.showModal(); settingsButton.setAttribute('aria-expanded', 'true');
+  };
   $('#share').onclick = async () => {
     const url = new URL(location.href); url.search = `?room=${code}`;
     const dialog = $<HTMLDialogElement>('#share-dialog'); $('#share-url').textContent = url.href; dialog.showModal();
@@ -74,7 +94,7 @@ async function openRoom(code: string) {
   const firstPage = document.createElement('button');
   firstPage.id = 'first-page'; firstPage.className = 'icon-button';
   firstPage.setAttribute('aria-label', 'Jump to page 1'); firstPage.title = 'Jump to page 1';
-  firstPage.textContent = '⇤'; $('.toolbar').prepend(firstPage);
+  firstPage.textContent = '↑'; $('.toolbar').prepend(firstPage);
   const followerPage = document.createElement('span'); followerPage.id = 'follower-page'; followerPage.textContent = 'Page 1';
   $('.toolbar').append(followerPage);
   viewer = new SongbookViewer($('#pdf'));
@@ -98,16 +118,17 @@ async function openRoom(code: string) {
   const rtl = document.createElement('input'); rtl.type = 'checkbox'; rtl.checked = true;
   rtl.setAttribute('aria-label', 'RTL orientation');
   orientation.append(rtl, document.createTextNode('RTL'));
-  $('.toolbar').append(orientation);
   rtl.onchange = () => { if (master && ready) viewer?.setRtl(rtl.checked); };
   let loadedSource = '', loadingSource = '', sourceRevision = 0;
   const publishPosition = (position: import('./model').Position, immediate = false) => publisher?.push({ ...position, sourceId: loadedSource }, immediate);
-  const screenshots = document.createElement('button'); screenshots.className = 'secondary source-button'; screenshots.textContent = 'Screenshots';
-  const songsButton = document.createElement('button'); songsButton.className = 'secondary source-button'; songsButton.textContent = 'Songs';
-  songsButton.onclick = () => { closeSheet?.(); closeSheet = showSongLibrary(service, room?.pdfTitle || 'Songbook'); };
+  const screenshots = document.createElement('button'); screenshots.className = 'secondary'; screenshots.textContent = 'Add file/song';
+  const songsButton = document.createElement('button'); songsButton.className = 'secondary'; songsButton.textContent = 'Select file/song';
+  songsButton.onclick = () => { dismissMenu(); closeSheet?.(); closeSheet = showSongLibrary(service, room?.pdfTitle || 'Songbook'); };
+  const menuSettings = document.createElement('button'); menuSettings.className = 'secondary'; menuSettings.textContent = 'Settings'; menuSettings.onclick = openSettings;
+  menuActions.append(songsButton, screenshots, menuSettings, orientation);
   const pdfButton = document.createElement('button'); pdfButton.className = 'secondary source-button'; pdfButton.textContent = 'PDF';
-  $('.toolbar').append(screenshots, songsButton, pdfButton);
-  screenshots.onclick = () => { closeSheet?.(); closeSheet = showSheetDialog(service); };
+  $('.toolbar').append(pdfButton);
+  screenshots.onclick = () => { dismissMenu(); closeSheet?.(); closeSheet = showSheetDialog(service); };
   pdfButton.onclick = async () => { pdfButton.disabled = true; try { await service.changeSheet(); } catch (error) { message(errorText(error)); } finally { if (token === generation) updateFollow(); } };
   publisher = new PositionPublisher(position => service.publish(position), error => message(errorText(error)));
   viewer.onPage = page => { $<HTMLInputElement>('#page').value = String(page); followerPage.textContent = room?.sheet ? room.sheet.title : `Page ${page} / ${viewer?.count || '…'}`; };
@@ -130,13 +151,20 @@ async function openRoom(code: string) {
     if (scrollbar) scrollbar.element.hidden = !master;
     scrollbar?.setEnabled(ready && master);
     orientation.hidden = !master;
+    settingsButton.textContent = master ? '☰' : '⚙';
+    settingsButton.setAttribute('aria-label', master ? 'Room menu' : 'Settings');
+    settingsButton.title = master ? 'Room menu' : 'Settings';
+    if (master) { settingsButton.setAttribute('aria-haspopup', 'dialog'); settingsButton.setAttribute('aria-controls', menu.id); settingsButton.setAttribute('aria-expanded', String(menu.open)); }
+    else { dismissMenu(); settingsButton.removeAttribute('aria-haspopup'); settingsButton.removeAttribute('aria-controls'); settingsButton.removeAttribute('aria-expanded'); }
     rtl.disabled = !ready;
     syncControl.hidden = master; syncCheckbox.disabled = !ready;
     $('#share').hidden = !master;
     $('#pdf').classList.toggle('locked', !ready);
     $('#pdf').classList.toggle('following', !master && following);
     for (const selector of ['#first-page', '#previous', '#next', '#page', '#zoom-out', '#zoom-in']) ($<HTMLButtonElement | HTMLInputElement>(selector)).disabled = !ready || !independent();
-    for (const selector of ['#first-page', '#previous', '#next', '#zoom-out', '#zoom-in', '.toolbar-divider']) $(selector).hidden = !master;
+    for (const selector of ['#first-page', '#previous', '#next']) $(selector).hidden = !master;
+    for (const selector of ['#zoom-out', '#zoom-in', '.toolbar-divider']) $(selector).hidden = true;
+    $('#zoom').hidden = master;
     $('#page-form').hidden = !master || Boolean(room?.sheet);
     for (const selector of ['#previous', '#next']) $(selector).hidden = !master || Boolean(room?.sheet);
     songsButton.hidden = !master; songsButton.disabled = !ready || connection !== 'Connected';
@@ -153,6 +181,7 @@ async function openRoom(code: string) {
     ready = false; master = false; viewer?.cancelFollow();
     scrollbar?.setEnabled(false);
     orientation.hidden = true;
+    dismissMenu();
     $('#role').textContent = 'Room unavailable';
     sync.destroy();
     pdfFrame.hidden = true;
