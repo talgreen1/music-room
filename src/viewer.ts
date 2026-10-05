@@ -2,7 +2,7 @@
 // newer APIs (e.g. Promise.try) that some phone browsers have not implemented.
 import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy, type RenderTask, type PDFDocumentLoadingTask } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import worker from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
-import { clampZoom, horizontalOffset, horizontalLeft, locatePosition, positionTop, type Position } from './model';
+import { clampZoom, horizontalOffset, horizontalLeft, locatePosition, positionTop, type Position, type ReadingTarget } from './model';
 import { PdfGestures, type Point } from './gestures';
 import { resolvePdfLink } from './pdf-links';
 import { validateSheet, type ImageSheet } from './sheets';
@@ -23,6 +23,7 @@ export class SongbookViewer {
   private frame = 0;
   private target?: { top: number; left: number };
   private sharedPosition?: Position;
+  private settledPosition?: ReadingTarget;
   private renderTimer?: ReturnType<typeof setTimeout>;
   private gestures: PdfGestures;
   private events = new AbortController();
@@ -206,7 +207,8 @@ export class SongbookViewer {
   position(): Position | undefined {
     if (!this.pages.length) return;
     const { tops, heights } = this.geometry();
-    return { ...locatePosition(tops, heights, this.host.scrollTop), zoom: this.zoom, horizontal: horizontalOffset(this.host.scrollLeft, this.host.scrollWidth, this.host.clientWidth) };
+    if (this.settledPosition && Math.abs(this.host.scrollTop - this.settledPosition.top) > 1) this.settledPosition = undefined;
+    return { ...locatePosition(tops, heights, this.host.scrollTop, this.settledPosition), zoom: this.zoom, horizontal: horizontalOffset(this.host.scrollLeft, this.host.scrollWidth, this.host.clientWidth) };
   }
   private emitPosition() { const position = this.position(); if (position) { this.onPage?.(position.page); this.onPosition?.(position); } }
   setZoom(value: number) {
@@ -235,10 +237,11 @@ export class SongbookViewer {
     this.host.scrollLeft = page.offsetLeft + horizontalAnchor * page.offsetWidth - to.x;
     this.emitPosition();
   }
-  jump(page: number) { this.follow({ page: Math.max(1, Math.min(this.count, page)), offset: 0, zoom: this.zoom, horizontal: this.position()?.horizontal }, true); }
+  jump(page: number) { this.follow({ page: Math.max(1, Math.min(this.count, Math.floor(page))), offset: 0, zoom: this.zoom, horizontal: this.position()?.horizontal }, true); }
   follow(position: Position, immediate = false) {
     if (!this.pages.length) return;
     this.sharedPosition = { ...position };
+    this.settledPosition = undefined;
     const zoom = clampZoom(position.zoom);
     if (this.zoom !== zoom) { this.zoom = zoom; this.layout(); }
     const { tops, heights } = this.geometry();
@@ -247,13 +250,18 @@ export class SongbookViewer {
       left: horizontalLeft(position, this.host.scrollWidth, this.host.clientWidth)
     };
     cancelAnimationFrame(this.frame);
-    if (immediate) { this.host.scrollTop = this.target.top; this.host.scrollLeft = this.target.left; this.target = undefined; this.emitPosition(); return; }
+    const finish = () => {
+      this.host.scrollTop = this.target!.top; this.host.scrollLeft = this.target!.left;
+      this.settledPosition = { position: { ...position }, top: this.host.scrollTop };
+      this.target = undefined; this.emitPosition();
+    };
+    if (immediate) { finish(); return; }
     let previous = performance.now();
     const animate = (now: number) => {
       if (this.target === undefined) return;
       const dy = this.target.top - this.host.scrollTop;
       const dx = this.target.left - this.host.scrollLeft;
-      if (Math.abs(dx) < 1.5 && Math.abs(dy) < 1.5) { this.host.scrollTop = this.target.top; this.host.scrollLeft = this.target.left; this.target = undefined; this.emitPosition(); return; }
+      if (Math.abs(dx) < 1.5 && Math.abs(dy) < 1.5) { finish(); return; }
       const factor = 1 - Math.exp(-Math.min(now - previous, 64) / 45);
       const step = (delta: number) => Math.abs(delta * factor) < 1 ? Math.sign(delta) : delta * factor;
       this.host.scrollTop += step(dy); this.host.scrollLeft += step(dx); previous = now;
@@ -261,7 +269,7 @@ export class SongbookViewer {
     };
     this.frame = requestAnimationFrame(animate);
   }
-  cancelFollow() { cancelAnimationFrame(this.frame); this.target = undefined; this.sharedPosition = undefined; }
+  cancelFollow() { cancelAnimationFrame(this.frame); this.target = undefined; this.sharedPosition = undefined; this.settledPosition = undefined; }
   async search(query: string): Promise<{ page: number; text: string }[]> {
     if (!this.pdf) return [];
     const matches: { page: number; text: string }[] = [];

@@ -8,8 +8,15 @@ export const clampZoom = (zoom: number) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM,
 export const normalizePosition = (p: Position): Position => ({ page: Math.max(1, Math.floor(finite(p.page, 1))), offset: Math.max(0, Math.min(1, finite(p.offset, 0))), zoom: clampZoom(p.zoom), horizontal: Math.max(0, Math.min(1, finite(p.horizontal ?? 0, 0))) });
 export const horizontalOffset = (scrollLeft: number, scrollWidth: number, viewportWidth: number) => Math.max(0, Math.min(1, scrollLeft / Math.max(1, scrollWidth - viewportWidth)));
 export const horizontalLeft = (position: Position, scrollWidth: number, viewportWidth: number) => normalizePosition(position).horizontal! * Math.max(0, scrollWidth - viewportWidth);
-export function locatePosition(tops: number[], heights: number[], scrollTop: number): Position {
+export interface ReadingTarget { position: Position; top: number }
+export function locatePosition(tops: number[], heights: number[], scrollTop: number, settled?: ReadingTarget): Position {
   if (!tops.length) return { page: 1, offset: 0, zoom: 1 };
+  // A completed jump can be rounded by the browser or clamped at the document
+  // end. Keep its reading anchor until scrolling moves away from that location.
+  if (settled && Math.abs(scrollTop - settled.top) <= 1) {
+    const position = normalizePosition(settled.position);
+    return { ...position, page: Math.min(position.page, tops.length) };
+  }
   let i = 0;
   while (i + 1 < tops.length && tops[i + 1] <= scrollTop) i++;
   return normalizePosition({ page: i + 1, offset: (scrollTop - tops[i]) / heights[i], zoom: 1 });

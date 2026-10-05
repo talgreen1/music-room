@@ -306,6 +306,12 @@ Release evidence (2026-10-05): user approved local testing. All 52 unit tests, t
 
 SS-015/SS-016 release (2026-10-05): user approved testing. All 52 tests, type checking, updated Settings integration and guarded production build passed. Deployed to Firebase Hosting; existing cloud library and permissions required no changes.
 
+- [x] **MR-053 - Simplify the Master toolbar with a hamburger menu.** Upper-bar menu contains Select file/song (existing library), Add file/song (existing screenshot importer), Settings and the default-checked RTL checkbox. Lower bar keeps page navigation with an upward arrow to page 1; no Master zoom buttons/percentage, RTL or import/library buttons. Pinch/drag gestures retain their existing implementation. Followers retain their previous controls. Browser checks verified each menu action, RTL checkbox state, dismissal, page navigation and the distinct-origin Follower view; 52 tests, type checking and build pass. Physical-phone pinch testing remains a manual check.
+
+- [x] **MR-054 - Focus Settings login and make page jumps reliable.** Settings focuses the password input immediately from home and the in-room menu. Completed viewer jumps retain their requested reading anchor when browser rounding or the document end prevents exact top alignment; user scrolling resumes geometric tracking. Regression tests cover subpixel boundaries, last-page clamping, cross-viewport coordinates and scrolling away. At a 390×844 viewport, one Next tap reaches page 145 and one Previous tap returns to 144; Settings password focus verified. 54 tests pass.
+
+MR-053/MR-054 release (2026-10-05): user approved phone testing. All 54 tests, type checking and guarded production build passed. Master menu actions, password focus, repeated single-tap navigation, final-page Follower sync and manual scroll tracking verified locally. Published to Firebase Hosting; no backend schema changes required.
+
 ## Future backlog: not part of version 1
 
 - [ ] **F-001 - Add a built-in song index.** As a musician, I can choose a song name to navigate to its page. Acceptance when scoped: versioned mapping agrees with the current PDF, including index-page offsets.

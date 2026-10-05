@@ -7,7 +7,7 @@ export function showSettings(app: HTMLElement, back: () => void) {
   const service = new SettingsService();
   let alive = true; let closePreview: (() => void) | undefined;
   app.innerHTML = `<main class="settings"><header><button id="settings-back" class="secondary">Back</button><h1>Settings</h1><button id="settings-logout" class="secondary" hidden>Lock</button></header>
-    <p id="settings-status" role="status"></p><form id="settings-login" class="entry-card"><label for="settings-password">Settings password</label><input id="settings-password" type="password" autocomplete="current-password" required><button class="primary" type="submit">Unlock settings</button></form>
+    <p id="settings-status" role="status"></p><form id="settings-login" class="entry-card"><label for="settings-password">Settings password</label><input id="settings-password" type="password" autocomplete="current-password" autofocus required><button class="primary" type="submit">Unlock settings</button></form>
     <section id="settings-content" hidden><section class="entry-card"><h2>Rooms</h2><div class="settings-actions"><button id="rooms-refresh" class="secondary">Refresh</button><button id="rooms-delete-all" class="danger">Delete all rooms</button></div><p>Deleting a room disconnects its participants.</p><div id="settings-rooms"></div></section>
     <section class="entry-card"><h2>Saved songs</h2><button id="songs-add" class="primary">Add song</button><button id="songs-refresh" class="secondary">Refresh songs</button><p>Deleting removes a song from the library. Active rooms keep viewing it; its images are cleaned up on a Settings refresh after those rooms switch away or expire.</p><div id="settings-songs"></div></section>
     <section class="entry-card"><h2>Default PDF</h2><a id="settings-preview" target="_blank" rel="noopener">View current PDF</a><form id="settings-pdf"><label for="pdf-file">Replacement PDF (up to 30 MB)</label><input id="pdf-file" type="file" accept="application/pdf,.pdf" required><label for="pdf-title">Title</label><input id="pdf-title" required maxlength="200"><label for="pdf-version">Version</label><input id="pdf-version" required maxlength="100"><p>New rooms use the uploaded PDF. Existing rooms keep their current songbook.</p><button class="primary" type="submit">Upload and update PDF</button></form></section></section></main>`;
@@ -88,6 +88,7 @@ export function showSettings(app: HTMLElement, back: () => void) {
     } catch (error) { fail(error); }
     finally { if (alive) button.disabled = false; }
   };
+  $<HTMLInputElement>('#settings-password').focus({ preventScroll: true });
   return dispose;
 }
 
@@ -104,5 +105,6 @@ export function showSettingsDialog(): () => void {
   dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
   dialog.addEventListener('close', close);
   dialog.showModal();
+  content.querySelector<HTMLInputElement>('#settings-password')!.focus({ preventScroll: true });
   return close;
 }
