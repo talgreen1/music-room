@@ -81,12 +81,12 @@ export function showSheetDialog(service: ScreenshotDestination, initialFiles?: F
     let song: SharedFile;
     if (pdf) {
       progress('Uploading PDF...');
-      song = { id, title, pdfUrl: await service.uploadPdf(pdf, id) };
+      song = { id, title, fileNames: [pdf.name], pdfUrl: await service.uploadPdf(pdf, id) };
     } else {
       const uploaded = [];
       for (const [index, segment] of segments.entries()) { if (closed) return; progress(`Uploading ${index + 1} / ${segments.length}…`); const url = await service.uploadSegment(segment.blob, id, index); uploaded.push({ url, width: segment.width, height: segment.height }); }
       if (closed) return;
-      song = { id, title, segments: uploaded };
+      song = { id, title, fileNames: captures.map(capture => capture.name), segments: uploaded };
     }
     progress('Saving song...'); await service.saveSong(song);
     if (!options.libraryOnly && service.changeSheet) {

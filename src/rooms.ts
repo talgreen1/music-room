@@ -174,6 +174,11 @@ export class RoomService {
       this.channel?.postMessage(value); this.onRoom?.(room);
     }
   }
+  async originalPdf() {
+    const descriptor = localServerConfigured ? validateSongbook(await (await fetch('/api/songbook')).json())
+      : this.db ? validateSongbook((await get(ref(this.db, 'songbook'))).val() || songbook) : songbook;
+    return { id: 'pdf', title: descriptor.pdfTitle, pdfUrl: descriptor.pdfUrl };
+  }
   async songs(): Promise<SavedSong[]> {
     if (localServerConfigured) { const response = await fetch('/api/songs'); if (!response.ok) throw new Error('Could not load saved songs.'); return response.json(); }
     if (!this.db) throw new Error('The song library requires the local server or Firebase.');
@@ -189,16 +194,17 @@ export class RoomService {
     if (!this.db) throw new Error('The song library requires the local server or Firebase.');
     await set(ref(this.db, `songs/${value.id}`), { ...value, ownerId: this.uid, roomCode: this.code, createdAt: serverTimestamp() });
   }
-  async changeSheet(sheet?: SharedFile) {
+  async changeSheet(sheet?: SharedFile, location = { page: 1, offset: 0 }) {
+    if (!Number.isInteger(location.page) || location.page < 1 || location.page > 10000 || !Number.isFinite(location.offset) || location.offset < 0 || location.offset > 1) throw new Error('Invalid search location.');
     if (!this.master || !this.code || !this.connected || !navigator.onLine) throw new Error('Connect as the Master before sharing a sheet.');
     const targetCode = this.code;
     let value = sheet ? validateFile(sheet) : undefined;
     if (value && this.db) { const saved = (await get(ref(this.db, `songs/${value.id}`))).val() as SavedSong | null; if (!saved || saved.deletedAt !== undefined) throw new Error('This song is no longer in the library.'); value = validateFile(saved); }
     if (this.code !== targetCode || !this.master || !this.connected) throw new Error('Room changed. Select the song in the current room.');
-    const position: Position = { page: 1, offset: 0, zoom: 1, horizontal: 0, sourceId: value?.id || 'pdf', sequence: ++this.sequence, updatedAt: Date.now() + this.serverOffset };
+    const position: Position = { page: location.page, offset: location.offset, zoom: 1, horizontal: 0, sourceId: value?.id || 'pdf', sequence: ++this.sequence, updatedAt: Date.now() + this.serverOffset };
     if (this.db) await update(ref(this.db, `rooms/${this.code}`), { sheet: value || null, position: { ...position, updatedAt: serverTimestamp() } });
     else if (localServerConfigured) {
-      const response = await fetch(`/api/local-rooms/${this.code}/sheet`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem(`music-master-token:${this.code}`)}` }, body: JSON.stringify({ sheet: value || null }) });
+      const response = await fetch(`/api/local-rooms/${this.code}/sheet`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem(`music-master-token:${this.code}`)}` }, body: JSON.stringify({ sheet: value || null, location }) });
       if (!response.ok) throw new Error((await response.json()).error || 'Could not share the sheet.');
     } else {
       const room = this.localRead(this.code); if (!room || room.masterId !== this.uid) throw new Error('Room unavailable.');

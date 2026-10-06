@@ -146,7 +146,7 @@ Live backend evidence: `node scripts/test-local-server.mjs` passed independent H
   - Acceptance: clear fit-to-width zoom controls and bounds; preserve reading anchor during changes; retest portrait/landscape.
   - Master zoom means a relative fit-width multiplier. If shared zoom harms mobile usability, document and test a local-zoom fallback before release.
 
-- [ ] **MR-027 - Search extracted songbook text.** As a musician, I can find a phrase or song name when the PDF supports it.
+- [x] **MR-027 - Search extracted songbook text.** As a musician, I can find a phrase or song name when the PDF supports it.
   - Acceptance: test actual Hebrew and other extracted text; incremental indexing, busy state, cancellation, empty results, and page jump.
   - Escape displayed text. Unsupported extraction produces an explanation; no OCR claim. Follower searches operate in browsing mode.
 
@@ -326,6 +326,19 @@ MR-053/MR-054 release (2026-10-05): user approved phone testing. All 54 tests, t
 Local evidence: persistence/migration, default protection, active PDF cleanup and source-switch regression tests added. `scripts/test-file-library.mjs` verifies both upload roles, exact PDF downloads, shared selection, PDF/image defaults, unchanged active rooms, denied unauthorized operations, stale-source positions and cleanup. All 57 unit tests, type checking and deployment build pass. Browser checks at 390 x 844 confirm PDF preview/default controls, new-room PDF navigation and page-37 synchronization with a separate-origin Follower, and switching both clients between image songs and an uploaded PDF. Automated file selection is blocked by the browser extension file-access setting; actual phone upload remains FL-006. The user approved local testing for release.
 
 Release evidence (2026-10-05): applied shared PDF Storage SQL, deployed syntax-validated Firebase rules, and published Hosting. `scripts/test-cloud-files.mjs` verified actual Master/Settings PDF uploads/downloads, immutability, PDF room creation/switching, synchronized positions, denied unauthorized default/deletion changes, default protection and active tombstones; restored the original default and removed disposable files/rooms. Existing cloud screenshot-library checks also passed. All 57 unit tests, type checking and deployment build passed. Source is published through the unified-file-library release PR.
+
+## Global and current-file song search (2026-10-06)
+
+- [x] **SS-001 - Global file search.** Search Home, Settings and the Master menu across the original songbook and live shared library. Titles and original upload names match even when the display title differs; existing records remain valid.
+- [x] **SS-002 - Readable PDF text.** Extract with PDF.js, support Hebrew/English, case/accent/niqqud normalization and safe literal queries. No OCR: image-only pages and screenshot songs match names only.
+- [x] **SS-003 - Current-file search.** All files is first and selected by default in every search dialog; Current file limits room search to the open manifest. Enter/Search dismisses the keyboard. Scope/query changes cancel stale work and clear stale results.
+- [x] **SS-004 - Open relevant results.** Show all matching blocks with file/page/snippet, resolve internal index links to their song destinations, and open Home/Settings previews at the target page. Master file switches and destination updates are atomic; Followers cannot change the room.
+- [x] **SS-005 - Responsive search and cancellation.** Search PDFs sequentially, show progress and immediate name matches, Stop/close cancels work, and unreadable PDFs do not prevent searching other files. Cache completed indexes locally for 24 hours, capped at 20 PDFs; no paid backend.
+- [x] **SS-006 - Automated/local verification.** 63 tests pass, including actual Hebrew index extraction/destination resolution, original-name matching, cancellation and Master-only atomic source/page selection. Local HTTP integration verifies names, target coordinates, invalid-target rejection, SSE/reconnection and authorization. Browser checks confirm Hebrew page-5 opening and a separate-origin Follower receiving page 5; global screenshot-name results open the selected file.
+- [ ] **SS-007 - Physical-phone acceptance.** Verify search keyboard/layout, large-book first-search progress/cancellation, text matches in another readable PDF, local/global results, Master sync and private Follower preview on Android/iPhone.
+- [ ] **SS-008 - Cloud rules and release.** Deploy updated optional fileNames rules, verify upload/catalog/room compatibility and existing permissions, then publish Hosting and complete the GitHub CLI release when requested.
+
+Deployment evidence (2026-10-06): Firebase CLI validated and released the updated database rules and published Hosting at https://talgreen-music-room.web.app. All 63 tests and the deployment build passed. The cloud file regression verified original-name metadata in catalog/room manifests, rejected empty names and more than 20 names, preserved Master/Follower/default/deletion authorization, and restored the default/cleaned disposable files. Live browser search confirmed All files first/selected, Enter removed input focus, and Hebrew results resolved to song page 5. GitHub commit/PR/merge remains pending a release request.
 
 ## Future backlog: not part of version 1
 

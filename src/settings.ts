@@ -1,5 +1,6 @@
 import { SettingsService } from './admin';
 import { showSheetDialog } from './sheet-dialog';
+import { showSearchDialog } from './search-dialog';
 import { showSongPreview } from './song-dialog';
 import { isPdfFile, type SharedFile } from './sheets';
 
@@ -9,7 +10,7 @@ export function showSettings(app: HTMLElement, back: () => void) {
   app.innerHTML = `<main class="settings"><header><button id="settings-back" class="secondary">Back</button><h1>Settings</h1><button id="settings-logout" class="secondary" hidden>Lock</button></header>
     <p id="settings-status" role="status"></p><form id="settings-login" class="entry-card"><label for="settings-password">Settings password</label><input id="settings-password" type="password" autocomplete="current-password" autofocus required><button class="primary" type="submit">Unlock settings</button></form>
     <section id="settings-content" hidden><section class="entry-card"><h2>Rooms</h2><div class="settings-actions"><button id="rooms-refresh" class="secondary">Refresh</button><button id="rooms-delete-all" class="danger">Delete all rooms</button></div><p>Deleting a room disconnects its participants.</p><div id="settings-rooms"></div></section>
-    <section class="entry-card"><h2>Files &amp; songs</h2><button id="songs-add" class="primary">Add file/song</button><button id="songs-refresh" class="secondary">Refresh files</button><p>The default opens in new rooms. Existing rooms keep their selected file. To delete the default, choose another default first. Deleted files stay visible in active rooms until those rooms switch away or expire.</p><div id="settings-songs"></div></section></section></main>`;
+    <section class="entry-card"><h2>Files &amp; songs</h2><button id="songs-add" class="primary">Add file/song</button><button id="songs-search" class="secondary">Search songs</button><button id="songs-refresh" class="secondary">Refresh files</button><p>The default opens in new rooms. Existing rooms keep their selected file. To delete the default, choose another default first. Deleted files stay visible in active rooms until those rooms switch away or expire.</p><div id="settings-songs"></div></section></section></main>`;
   const $ = <T extends HTMLElement = HTMLElement>(selector: string) => app.querySelector<T>(selector)!;
   const report = (text: string) => { if (alive) $('#settings-status').textContent = text; };
   const fail = (error: unknown) => report(error instanceof Error ? error.message : 'Settings operation failed.');
@@ -76,6 +77,10 @@ export function showSettings(app: HTMLElement, back: () => void) {
     } catch (error) { fail(error); } finally { if (alive) button.disabled = false; }
   };
   $('#songs-add').onclick = () => { closePreview?.(); closePreview = showSheetDialog(service, undefined, { libraryOnly: true, onSaved: async () => { if (!alive) return; report('File saved.'); await refreshSongs().catch(fail); } }); };
+  $('#songs-search').onclick = () => { closePreview?.(); closePreview = showSearchDialog({
+    files: async () => { const [original, songs] = await Promise.all([service.defaultPdf(), service.songs()]); return [{ id: 'pdf', title: original.pdfTitle, pdfUrl: original.pdfUrl }, ...songs]; },
+    open: result => { closePreview = showSongPreview(result.file, result.location); }
+  }); };
   $('#songs-refresh').onclick = () => void refreshSongs().catch(fail);
   $('#rooms-refresh').onclick = () => void refresh().catch(fail);
   $('#rooms-delete-all').onclick = async () => {

@@ -2,6 +2,7 @@ import type { RoomService } from './rooms';
 import { isPdfFile } from './sheets';
 import type { SharedFile } from './sheets';
 import type { SavedSong } from './song-library';
+import type { SearchLocation } from './search';
 import { SongbookViewer } from './viewer';
 
 export function showSongLibrary(service: RoomService, pdfTitle: string): () => void {
@@ -35,7 +36,7 @@ export function showSongLibrary(service: RoomService, pdfTitle: string): () => v
   return close;
 }
 
-export function showSongPreview(song: SharedFile): () => void {
+export function showSongPreview(song: SharedFile, location: SearchLocation = { page: 1, offset: 0 }): () => void {
   const dialog = document.createElement('dialog'); dialog.className = 'song-preview-dialog';
   dialog.innerHTML = '<button class="dialog-close icon-button" aria-label="Close song preview">×</button><h2></h2><div class="pdf-host" tabindex="0" aria-label="Saved song preview"></div><div class="preview-controls"><button class="secondary" aria-label="Preview zoom out">−</button><span>100%</span><button class="secondary" aria-label="Preview zoom in">+</button></div>';
   dialog.querySelector('h2')!.textContent = song.title; document.body.append(dialog); dialog.showModal();
@@ -45,6 +46,6 @@ export function showSongPreview(song: SharedFile): () => void {
   dialog.querySelector<HTMLButtonElement>('.dialog-close')!.onclick = close; dialog.addEventListener('close', close);
   dialog.querySelector<HTMLButtonElement>('[aria-label="Preview zoom out"]')!.onclick = () => viewer.setZoom((viewer.position()?.zoom || 1) - .1);
   dialog.querySelector<HTMLButtonElement>('[aria-label="Preview zoom in"]')!.onclick = () => viewer.setZoom((viewer.position()?.zoom || 1) + .1);
-  void (isPdfFile(song) ? viewer.load(song.pdfUrl) : viewer.loadSheet(song)).then(() => { if (alive) viewer.follow({ page: 1, offset: 0, zoom: 1, horizontal: 0 }, true); }).catch(error => { if (alive) dialog.querySelector('h2')!.textContent = error instanceof Error ? error.message : 'Could not open song.'; });
+  void (isPdfFile(song) ? viewer.load(song.pdfUrl) : viewer.loadSheet(song)).then(() => { if (alive) viewer.follow({ ...location, zoom: 1, horizontal: 0 }, true); }).catch(error => { if (alive) dialog.querySelector('h2')!.textContent = error instanceof Error ? error.message : 'Could not open song.'; });
   return close;
 }

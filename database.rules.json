@@ -108,6 +108,12 @@
           },
           "pdfUrl": {
             ".validate": "newData.isString() && newData.val() === root.child('songs').child(newData.parent().child('id').val()).child('pdfUrl').val()"
+          },
+          "fileNames": {
+            ".validate": "newData.hasChild('0')",
+            "$index": {
+              ".validate": "$index.matches(/^([0-9]|1[0-9])$/) && newData.isString() && newData.val().length > 0 && newData.val().length <= 255"
+            }
           }
         },
         "$other": {
@@ -161,6 +167,12 @@
         },
         "pdfUrl": {
           ".validate": "newData.isString() && newData.val() === 'https://vsnrxzpigrrafdrmjugo.supabase.co/storage/v1/object/public/room-pdfs/' + newData.parent().child('ownerId').val() + '/' + $id + '/document.pdf'"
+        },
+        "fileNames": {
+          ".validate": "newData.hasChild('0')",
+          "$index": {
+            ".validate": "$index.matches(/^([0-9]|1[0-9])$/) && newData.isString() && newData.val().length > 0 && newData.val().length <= 255"
+          }
         }
       }
     },

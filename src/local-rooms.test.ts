@@ -2,6 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { LocalRoomStore } from '../server/local-rooms';
 const descriptor = { masterId: 'creator', pdfUrl: '/songbook.pdf', pdfVersion: 'one', pdfTitle: 'Book' };
 describe('shared local development rooms', () => {
+  it('opens a search result with the matching source and page in one shared update', () => {
+    const store = new LocalRoomStore(), created = store.create(descriptor);
+    const file = { id: 'c'.repeat(32), title: 'Search book', pdfUrl: '/book.pdf', fileNames: ['original.pdf'] };
+    const received: unknown[] = []; store.subscribe(created.code, room => received.push(room?.position));
+    expect(store.changeSheet(created.code, 'follower', file, { page: 37, offset: .4 })).toBe('forbidden');
+    expect(store.changeSheet(created.code, created.token, file, { page: 37, offset: .4 })).toBe('ok');
+    expect(received).toHaveLength(2);
+    expect(store.read(created.code)?.position).toMatchObject({ sourceId: file.id, page: 37, offset: .4, sequence: 1 });
+    expect(store.read(created.code)?.sheet).toEqual(file);
+    expect(store.changeSheet(created.code, created.token, undefined, { page: 0, offset: 0 })).toBe('invalid');
+    expect(store.read(created.code)?.sheet?.id).toBe(file.id);
+  });
   it('starts with a selected PDF or image default and keeps source identity across switches', () => {
     const store = new LocalRoomStore();
     const pdf = { id: 'd'.repeat(32), title: 'Second book', pdfUrl: '/api/songbooks/book.pdf' };

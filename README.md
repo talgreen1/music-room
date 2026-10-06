@@ -237,7 +237,19 @@ Defaults work without PDF environment settings. To publish a replacement:
 3. Build/deploy and create a new room to verify it uses the replacement.
 4. Retain previous files until rooms using them have expired, then remove obsolete publishing copies.
 
-Every room pins its URL/version/title at creation. Active rooms keep the same book even when a newer version is published. External PDF hosts must allow CORS. Search has not been exposed in the initial UI: much of the supplied book appears to have limited extractable song text, and Hebrew search requires further verification.
+Every room pins its URL/version/title at creation. Active rooms keep the same book even when a newer version is published. External PDF hosts must allow CORS. Search reads existing PDF text; screenshots and image-only PDF pages are searchable by file name/title only. No OCR is used.
+
+## Song search
+
+Use **Search songs** on Home or Settings to search the original songbook and every available library file. Search always starts with **All files**, the first scope option. In a room, choose **Current file** to limit the search, or use **Search all files** in the Master menu. Enter a song, artist or file name and press Enter or Search; submission dismisses the mobile keyboard to expose results. Results show the file, matching text and destination page. Click a result to open it. Linked PDF index results open their song destination rather than the index page.
+
+Master selections update the room for everyone. A Follower can jump within the current file using the existing three-second browsing pause, or preview another file privately. Home and Settings results open a preview. Manual Master-sync preferences remain unchanged.
+
+`src/search.ts` handles matching and result coordinates; `src/pdf-search.ts` extracts PDF.js text and internal link destinations without rendering canvases; `src/search-dialog.ts` handles scope, progress, cancellation and opening results. Matching ignores case, accents and Hebrew niqqud. New uploads retain original file names even when renamed; older entries use their title and, for PDFs, URL basename.
+
+PDFs are searched sequentially on the device. Names appear immediately; text results appear after each PDF finishes. The first search downloads the PDFs; completed text indexes are cached in IndexedDB for up to 24 hours, capped at 20 PDFs. Storage restrictions fall back to extracting again. Stop or closing the dialog cancels extraction. Search adds no cloud service or server text index.
+
+Before publishing this feature, deploy the updated `database.rules.json` allowing the optional `fileNames` metadata in catalog and room manifests. Existing records remain compatible. Physical-phone search acceptance and cloud-rule verification are tracked in the plan.
 
 ## Deployment
 
