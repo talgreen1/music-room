@@ -37,7 +37,7 @@ try {
   const code = await room(), bytes = await readFile('public/songbooks/songbook-2026-10.pdf');
   for (const [index, user] of [master.user, admin].entries()) {
     const id = randomBytes(16).toString('hex'), path = `${user.uid}/${id}/document.pdf`;
-    const file = { id, title: `${index ? 'Settings' : 'Master'} cloud PDF check`, pdfUrl: `${env.VITE_SUPABASE_URL}/storage/v1/object/public/room-pdfs/${path}` };
+    const file = { id, title: `${index ? 'Settings' : 'Master'} cloud PDF check`, fileNames: ['Original songbook.pdf'], pdfUrl: `${env.VITE_SUPABASE_URL}/storage/v1/object/public/room-pdfs/${path}` };
     files.push({ file, path });
     const uploaded = await storage(user, `room-pdfs/${path}`, 'POST', bytes);
     assert.ok(uploaded.ok, `PDF upload failed: ${uploaded.status} ${await uploaded.text()}`);
@@ -46,6 +46,9 @@ try {
     await set(ref(dbs[index ? 2 : 0], `songs/${id}`), { ...file, ownerId: user.uid, createdAt: serverTimestamp(), ...(index ? {} : { roomCode: code }) });
   }
   const first = files[0].file, second = files[1].file;
+  assert.deepEqual((await get(ref(dbs[1], `songs/${first.id}`))).val().fileNames, first.fileNames);
+  await denied(() => update(ref(dbs[2], `songs/${first.id}`), { fileNames: [''] }));
+  await denied(() => update(ref(dbs[2], `songs/${first.id}`), { fileNames: Array(21).fill('file.pdf') }));
   const position = (sourceId, sequence) => ({ sourceId, sequence, page: 37, offset: .6, horizontal: .7, zoom: 2, updatedAt: serverTimestamp() });
   await denied(() => set(ref(dbs[0], 'defaultFile'), first.id));
   await denied(() => set(ref(dbs[1], 'defaultFile'), first.id));
@@ -59,6 +62,7 @@ try {
   await denied(() => update(ref(dbs[1], `rooms/${code}`), { sheet: second, position: position(second.id, 1) }));
   await update(ref(dbs[0], `rooms/${code}`), { sheet: second, position: position(second.id, 1) });
   const joined = (await get(ref(dbs[1], `rooms/${code}`))).val();
+  assert.deepEqual(joined.sheet.fileNames, second.fileNames);
   assert.equal(joined.sheet.pdfUrl, second.pdfUrl); assert.equal(joined.position.page, 37); assert.equal(joined.position.horizontal, .7);
   await denied(() => set(ref(dbs[0], `rooms/${code}/position`), position(first.id, 2)));
   await denied(() => remove(ref(dbs[0], `songs/${second.id}`)));

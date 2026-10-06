@@ -38,7 +38,7 @@ const masterHeaders = { Authorization: `Bearer ${created.token}`, 'Content-Type'
 const imageUpload = await fetch(`${roomUrl}/images`, { method: 'POST', headers: { Authorization: masterHeaders.Authorization, 'Content-Type': 'image/jpeg' }, body: new Uint8Array([255, 216, 255, 217]) });
 assert.equal(imageUpload.status, 201); const imageUrl = (await imageUpload.json()).url;
 const songId = (await import('node:crypto')).randomBytes(16).toString('hex');
-const sheet = { id: songId, title: 'Test screenshot sheet', segments: [{ url: imageUrl, width: 960, height: 1200 }] };
+const sheet = { id: songId, title: 'Test screenshot sheet', fileNames: ['Original screenshot.jpg'], segments: [{ url: imageUrl, width: 960, height: 1200 }] };
 assert.equal((await fetch(`${roomUrl}/songs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sheet) })).status, 403);
 assert.equal((await fetch(`${roomUrl}/songs`, { method: 'POST', headers: masterHeaders, body: JSON.stringify(sheet) })).status, 201);
 assert.equal((await (await fetch(`${base}/api/songs`)).json()).find(song => song.id === songId).title, sheet.title);
@@ -48,7 +48,13 @@ assert.equal((await fetch(`${roomUrl}/sheet`, { method: 'PUT', headers: masterHe
 assert.equal((await fetch(`${roomUrl}/sheet`, { method: 'PUT', headers: masterHeaders, body: JSON.stringify({ sheet }) })).status, 200);
 const sheetSnapshot = (await (await fetch(roomUrl)).json()).room;
 assert.equal(sheetSnapshot.sheet.id, sheet.id); assert.equal(sheetSnapshot.position.sourceId, sheet.id);
+assert.deepEqual(sheetSnapshot.sheet.fileNames, sheet.fileNames);
 assert.equal((await fetch(roomUrl, { method: 'PATCH', headers: masterHeaders, body: JSON.stringify({ page: 1, offset: 0, zoom: 1, sourceId: 'pdf' }) })).status, 400);
+assert.equal((await fetch(`${roomUrl}/sheet`, { method: 'PUT', headers: masterHeaders, body: JSON.stringify({ sheet: null, location: { page: 37, offset: .25 } }) })).status, 200);
+const searchSnapshot = (await (await fetch(roomUrl)).json()).room;
+assert.equal(searchSnapshot.position.sourceId, 'pdf'); assert.equal(searchSnapshot.position.page, 37); assert.equal(searchSnapshot.position.offset, .25);
+assert.equal((await fetch(`${roomUrl}/sheet`, { method: 'PUT', headers: masterHeaders, body: JSON.stringify({ sheet, location: { page: 0, offset: 0 } }) })).status, 400);
+assert.equal((await (await fetch(roomUrl)).json()).room.position.sourceId, 'pdf');
 assert.equal((await fetch(`${roomUrl}/images`, { method: 'POST', headers: { Authorization: masterHeaders.Authorization }, body: 'not an image' })).status, 400);
 assert.equal((await fetch(`${roomUrl}/sheet`, { method: 'PUT', headers: masterHeaders, body: JSON.stringify({ sheet: null }) })).status, 200);
 assert.equal((await fetch(roomUrl, { method: 'PATCH', headers: masterHeaders, body: JSON.stringify({ page: 37, offset: .62, zoom: 3, horizontal: .7, sourceId: 'pdf' }) })).status, 200);

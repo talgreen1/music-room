@@ -132,7 +132,9 @@ Reserve page geometry before drawing so lazy rendering does not change scroll an
 
 Load the PDF once per device/session and use HTTP caching across sessions. Realtime messages contain no PDF bytes or page images. The actual 12.4 MB book must be tested on phones for first-page time, distant-page jumps, and sustained memory use.
 
-Search uses extracted PDF text, including Hebrew when available. Index incrementally, provide progress/cancellation, and escape results before inserting them into the DOM. Search jumps to a physical page. Text highlighting and a curated song index are optional later additions. Clearly explain when a scanned or poorly encoded PDF cannot be searched.
+Search uses extracted PDF text, including Hebrew when available, and file titles/original upload names. Global search covers the original songbook and live shared catalog; local search covers the current manifest. PDF.js extracts one document at a time, reports page progress, and supports cancellation. Completed text/coordinate indexes are cached per URL in IndexedDB for 24 hours with a 20-document cap; failures fall back to extraction. Results use textContent and carry a physical page/normalized offset. Internal index links resolve to the song destination. No OCR or image-text search is included. Text highlighting and a curated song index are optional later additions.
+
+Choosing a different file as Master atomically updates its manifest and initial search destination, avoiding an intermediate page-1 broadcast. Selecting within the current file publishes through the existing position synchronizer. Followers retain the existing temporary browse/manual-sync behavior; other-file results open private previews. Home/Settings search opens previews. Optional `fileNames` metadata is validated in the local model and Firebase rules; legacy records remain valid.
 
 ## 8. Interface
 

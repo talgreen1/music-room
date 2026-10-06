@@ -28,14 +28,15 @@ export class LocalRoomStore {
   }
   read(code: string) { const entry = this.rooms.get(code); return entry && entry.room.expiresAt > this.now() ? structuredClone(entry.room) : null; }
   authorized(code: string, token: string) { const entry = this.rooms.get(code); return Boolean(entry && entry.room.expiresAt > this.now() && token && token === entry.token); }
-  changeSheet(code: string, token: string, value?: SharedFile): 'ok' | 'missing' | 'forbidden' | 'invalid' {
+  changeSheet(code: string, token: string, value?: SharedFile, location = { page: 1, offset: 0 }): 'ok' | 'missing' | 'forbidden' | 'invalid' {
     if (!this.read(code)) return 'missing';
     if (!this.authorized(code, token)) return 'forbidden';
     const entry = this.rooms.get(code)!;
     let sheet: SharedFile | undefined;
     try { sheet = value !== undefined ? validateFile(value) : undefined; } catch { return 'invalid'; }
+    if (!Number.isInteger(location?.page) || location.page < 1 || location.page > 10000 || !Number.isFinite(location.offset) || location.offset < 0 || location.offset > 1) return 'invalid';
     if (sheet) entry.room.sheet = sheet; else delete entry.room.sheet;
-    entry.room.position = { page: 1, offset: 0, horizontal: 0, zoom: 1, sourceId: sheet?.id || 'pdf', sequence: (entry.room.position.sequence || 0) + 1, updatedAt: this.now() };
+    entry.room.position = { page: location.page, offset: location.offset, horizontal: 0, zoom: 1, sourceId: sheet?.id || 'pdf', sequence: (entry.room.position.sequence || 0) + 1, updatedAt: this.now() };
     for (const listener of entry.listeners) listener(structuredClone(entry.room));
     return 'ok';
   }
@@ -152,7 +153,7 @@ export function localRoomsPlugin(env: Record<string, string> = {}): Plugin {
               const input = await body(req); if (!Object.hasOwn(input, 'sheet')) throw new Error('Missing sheet.');
               let sheet: SharedFile | undefined;
               if (input.sheet !== null) { const requested = validateFile(input.sheet as SharedFile); const saved = await library.get(requested.id); if (!saved) throw new Error('This song is no longer in the library.'); sheet = validateFile(saved); }
-              const result = store.changeSheet(code, token, sheet);
+              const result = store.changeSheet(code, token, sheet, input.location === undefined ? undefined : input.location as { page: number; offset: number });
               json(res, result === 'ok' ? 200 : 400, result === 'ok' ? { ok: true } : { error: result }); return;
             }
             if (sheetRoute[2] === 'pdfs' && req.method === 'POST') { json(res, 201, await uploadPdf(req)); return; }

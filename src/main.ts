@@ -7,7 +7,9 @@ import { PositionPublisher } from './sync';
 import { PdfScrollbar } from './scrollbar';
 import { FollowerSync } from './follower-sync';
 import { showSettings, showSettingsDialog } from './settings';
-import { showSongLibrary } from './song-dialog';
+import { showSongLibrary, showSongPreview } from './song-dialog';
+import { showSearchDialog } from './search-dialog';
+import type { SearchResult } from './search';
 import { isPdfFile } from './sheets';
 import { showSheetDialog } from './sheet-dialog';
 
@@ -42,6 +44,11 @@ function home() {
     <footer><span class="book-dot"></span><span>${safe(songbook.pdfTitle)} · ${safe(songbook.pdfVersion)}</span></footer>
     ${localServerConfigured ? '<aside class="demo-note"><strong>Local development</strong><br>Rooms are shared by this server. Join from another browser, or use your computer’s network address from a phone on the same Wi-Fi. Rooms reset when the server restarts.</aside>' : !cloudConfigured ? '<aside class="demo-note"><strong>Browser-only demo</strong><br>Open a second tab in this browser to try following. Set up Firebase to connect separate browsers or phones.</aside>' : '<p class="privacy">No account needed. Just bring your instrument.</p>'}</main>`;
   const settingsButton = document.createElement('button'); settingsButton.className = 'secondary'; settingsButton.textContent = 'Settings'; settingsButton.id = 'settings'; $('.brand').append(settingsButton);
+  const searchButton = document.createElement('button'); searchButton.className = 'secondary'; searchButton.textContent = 'Search songs'; $('.brand').append(searchButton);
+  searchButton.onclick = () => { closeSheet?.(); closeSheet = showSearchDialog({
+    files: async () => { await service.init(); const [original, songs] = await Promise.all([service.originalPdf(), service.songs()]); return [original, ...songs]; },
+    open: result => { closeSheet = showSongPreview(result.file, result.location); }
+  }); };
   settingsButton.onclick = () => { history.pushState({}, '', '?settings=1'); route(); };
   $('#create').onclick = async () => {
     const button = $<HTMLButtonElement>('#create'); button.disabled = true; button.textContent = 'Creating room…'; message('');
@@ -62,7 +69,8 @@ async function openRoom(code: string) {
   const settingsButton = document.createElement('button');
   settingsButton.className = 'icon-button'; settingsButton.textContent = '⚙';
   settingsButton.setAttribute('aria-label', 'Settings'); settingsButton.title = 'Settings';
-  $('.room-header').append(settingsButton);
+  const searchButton = document.createElement('button'); searchButton.className = 'icon-button'; searchButton.textContent = '\u2315'; searchButton.setAttribute('aria-label', 'Search songs'); searchButton.title = 'Search songs';
+  $('.room-header').append(searchButton, settingsButton);
   const menu = document.createElement('dialog'); menu.id = 'room-menu'; menu.className = 'room-menu';
   menu.setAttribute('aria-label', 'Room menu');
   menu.innerHTML = '<button class="dialog-close icon-button" aria-label="Close room menu">×</button><h2>Room menu</h2><div class="room-menu-actions"></div>';
@@ -126,7 +134,30 @@ async function openRoom(code: string) {
   const songsButton = document.createElement('button'); songsButton.className = 'secondary'; songsButton.textContent = 'Select file/song';
   songsButton.onclick = () => { dismissMenu(); closeSheet?.(); closeSheet = showSongLibrary(service, room?.pdfTitle || 'Songbook'); };
   const menuSettings = document.createElement('button'); menuSettings.className = 'secondary'; menuSettings.textContent = 'Settings'; menuSettings.onclick = openSettings;
-  menuActions.append(songsButton, screenshots, menuSettings, orientation);
+  const searchAll = document.createElement('button'); searchAll.className = 'secondary'; searchAll.textContent = 'Search all files';
+  const originalFile = () => ({ id: 'pdf', title: room!.pdfTitle, pdfUrl: room!.pdfUrl });
+  const openSearch = () => {
+    if (!ready || !room) return;
+    dismissMenu(); closeSheet?.();
+    const capturedCurrent = room.sheet || originalFile();
+    closeSheet = showSearchDialog({
+      current: capturedCurrent,
+      files: async () => { const songs = await service.songs(); return [originalFile(), ...songs]; },
+      open: async (result: SearchResult) => {
+        if (token !== generation || !room || !ready) throw new Error('The room changed. Search again.');
+        if (result.file.id === (room.sheet?.id || 'pdf')) {
+          beginBrowsing();
+          const position = { ...viewer!.position()!, ...result.location, horizontal: rtl.checked ? 1 : 0 };
+          viewer!.follow(position, true);
+          if (master) publishPosition(viewer!.position()!, true);
+          endBrowsing();
+        } else if (master) await service.changeSheet(result.file.id === 'pdf' ? undefined : result.file, result.location);
+        else closeSheet = showSongPreview(result.file, result.location);
+      }
+    });
+  };
+  searchButton.onclick = openSearch; searchAll.onclick = openSearch;
+  menuActions.append(songsButton, searchAll, screenshots, menuSettings, orientation);
   const pdfButton = document.createElement('button'); pdfButton.className = 'secondary source-button'; pdfButton.textContent = 'PDF';
   $('.toolbar').append(pdfButton);
   screenshots.onclick = () => { dismissMenu(); closeSheet?.(); closeSheet = showSheetDialog(service); };
@@ -157,7 +188,7 @@ async function openRoom(code: string) {
     settingsButton.title = master ? 'Room menu' : 'Settings';
     if (master) { settingsButton.setAttribute('aria-haspopup', 'dialog'); settingsButton.setAttribute('aria-controls', menu.id); settingsButton.setAttribute('aria-expanded', String(menu.open)); }
     else { dismissMenu(); settingsButton.removeAttribute('aria-haspopup'); settingsButton.removeAttribute('aria-controls'); settingsButton.removeAttribute('aria-expanded'); }
-    rtl.disabled = !ready;
+    rtl.disabled = !ready; searchButton.disabled = !ready; searchAll.disabled = !ready;
     syncControl.hidden = master; syncCheckbox.disabled = !ready;
     $('#share').hidden = !master;
     $('#pdf').classList.toggle('locked', !ready);
