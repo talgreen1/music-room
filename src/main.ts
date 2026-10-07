@@ -1,6 +1,6 @@
 import './style.css';
 import QRCode from 'qrcode';
-import { shareIcon, copyIcon } from './icons';
+import { shareIcon, copyIcon, searchIcon } from './icons';
 import { copyRoomUrl } from './clipboard';
 import { RoomService, cloudConfigured, localServerConfigured, songbook, type Connection } from './rooms';
 import { validCode, type Room } from './model';
@@ -66,7 +66,7 @@ async function openRoom(code: string) {
   const settingsButton = document.createElement('button');
   settingsButton.className = 'icon-button'; settingsButton.textContent = '⚙';
   settingsButton.setAttribute('aria-label', 'Settings'); settingsButton.title = 'Settings';
-  const searchButton = document.createElement('button'); searchButton.className = 'icon-button'; searchButton.textContent = '\u2315'; searchButton.setAttribute('aria-label', 'Search songs'); searchButton.title = 'Search songs';
+  const searchButton = document.createElement('button'); searchButton.className = 'icon-button room-search'; searchButton.innerHTML = searchIcon; searchButton.hidden = true; searchButton.setAttribute('aria-label', 'Search songs'); searchButton.title = 'Search songs';
   $('.room-header').append(searchButton, settingsButton);
   const menu = document.createElement('dialog'); menu.id = 'room-menu'; menu.className = 'room-menu';
   menu.setAttribute('aria-label', 'Room menu');
@@ -141,7 +141,6 @@ async function openRoom(code: string) {
   const songsButton = document.createElement('button'); songsButton.className = 'secondary'; songsButton.textContent = 'Select file/song';
   songsButton.onclick = () => { dismissMenu(); closeSheet?.(); closeSheet = showSongLibrary(service, room?.pdfTitle || 'Songbook'); };
   const menuSettings = document.createElement('button'); menuSettings.className = 'secondary'; menuSettings.textContent = 'Settings'; menuSettings.onclick = openSettings;
-  const searchAll = document.createElement('button'); searchAll.className = 'secondary'; searchAll.textContent = 'Search all files';
   const originalFile = () => ({ id: 'pdf', title: room!.pdfTitle, pdfUrl: room!.pdfUrl });
   const openSearch = () => {
     if (!ready || !room) return;
@@ -163,8 +162,8 @@ async function openRoom(code: string) {
       }
     });
   };
-  searchButton.onclick = openSearch; searchAll.onclick = openSearch;
-  menuActions.append(songsButton, searchAll, screenshots, menuSettings, orientation);
+  searchButton.onclick = openSearch;
+  menuActions.append(screenshots, songsButton, menuSettings, orientation);
   const pdfButton = document.createElement('button'); pdfButton.className = 'secondary source-button'; pdfButton.textContent = 'PDF';
   $('.toolbar').append(pdfButton);
   screenshots.onclick = () => { dismissMenu(); closeSheet?.(); closeSheet = showSheetDialog(service); };
@@ -195,7 +194,7 @@ async function openRoom(code: string) {
     settingsButton.title = master ? 'Room menu' : 'Settings';
     if (master) { settingsButton.setAttribute('aria-haspopup', 'dialog'); settingsButton.setAttribute('aria-controls', menu.id); settingsButton.setAttribute('aria-expanded', String(menu.open)); }
     else { dismissMenu(); settingsButton.removeAttribute('aria-haspopup'); settingsButton.removeAttribute('aria-controls'); settingsButton.removeAttribute('aria-expanded'); }
-    rtl.disabled = !ready; searchButton.disabled = !ready; searchAll.disabled = !ready;
+    rtl.disabled = !ready; searchButton.disabled = !ready;
     syncControl.hidden = master; syncCheckbox.disabled = !ready;
     $('#share').hidden = !master;
     $('#pdf').classList.toggle('locked', !ready);
@@ -244,7 +243,8 @@ async function openRoom(code: string) {
     }
     if ((next.position.sequence || 0) < lastSequence) return;
     const first = !room; const previous = room?.position; room = next; master = service.isMaster(next);
-    $('#role').textContent = master ? 'You are the Master' : 'Follower';
+    $('#role').textContent = master ? 'Master' : 'Follower';
+    searchButton.hidden = !master;
     const source = next.sheet?.id || 'pdf';
     if (first || (loadingSource ? source !== loadingSource : source !== loadedSource)) {
       const revision = ++sourceRevision; loadingSource = source; ready = false; lastPublished = '';
