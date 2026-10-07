@@ -1,6 +1,6 @@
-// A deterministic 40-second portrait film with an original Web Audio soundtrack.
+// A deterministic 42-second portrait film with an original Web Audio soundtrack.
 // All artwork and music are generated locally. No remote assets or uploads.
-import { createSoundtrack } from './soundtrack.js';
+import { createSoundtrack, SOUNDTRACK_BPM } from './soundtrack.js';
 const canvas = document.querySelector('#film');
 const ctx = canvas.getContext('2d');
 const play = document.querySelector('#play');
@@ -10,18 +10,20 @@ const timeLabel = document.querySelector('#time');
 const download = document.querySelector('#download');
 const status = document.querySelector('#status');
 const sound = document.querySelector('#sound');
-const DURATION = 40;
+const goHome = document.querySelector('#go-home');
+const DURATION = 42;
 const C = { bg: '#101d19', ink: '#edf5eb', muted: '#a6bbac', lime: '#b6e491', teal: '#60d5bf', orange: '#efb280', paper: '#f7f4e9', dark: '#173027' };
 const scenes = [
   { start: 0, end: 3.5, kind: 'brand' },
   { start: 3.5, end: 5.8, kind: 'question' },
   { start: 5.8, end: 11, kind: 'before' },
-  { start: 11, end: 16, kind: 'create' },
-  { start: 16, end: 21, kind: 'join' },
-  { start: 21, end: 23.5, kind: 'select' },
-  { start: 23.5, end: 31.5, kind: 'sync' },
-  { start: 31.5, end: 36.5, kind: 'upload' },
-  { start: 36.5, end: 40, kind: 'end' },
+  { start: 11, end: 13, kind: 'solution' },
+  { start: 13, end: 18, kind: 'create' },
+  { start: 18, end: 23, kind: 'join' },
+  { start: 23, end: 25.5, kind: 'select' },
+  { start: 25.5, end: 33.5, kind: 'sync' },
+  { start: 33.5, end: 38.5, kind: 'upload' },
+  { start: 38.5, end: 42, kind: 'end' },
 ];
 const clamp = (n, low = 0, high = 1) => Math.max(low, Math.min(high, n));
 const ease = n => { n = clamp(n); return n * n * (3 - 2 * n); };
@@ -61,7 +63,7 @@ function background(t) {
   }
   ctx.restore();
   ctx.save(); ctx.globalAlpha = .13; ctx.strokeStyle = C.lime; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(360, 465, 280 + Math.sin(t * Math.PI * 116 / 60) * 8, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+  ctx.beginPath(); ctx.arc(360, 465, 280 + Math.sin(t * Math.PI * SOUNDTRACK_BPM / 60) * 8, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
 }
 function caption(scene, local, delay = .6, until = Infinity) {
   const entry = ease((local - delay) / .35) * ease((until - local) / .25);
@@ -138,7 +140,7 @@ function flow(x1, x2, y, phase) {
 }
 function drawScene(index, local) {
   const kind = scenes[index].kind;
-  const pulse = Math.sin(local * Math.PI * 116 / 60);
+  const pulse = Math.sin(local * Math.PI * SOUNDTRACK_BPM / 60);
   const positions = [{ x: 255, y: 85 }, { x: 95, y: 515 }, { x: 415, y: 515 }];
   function mobile(index, options, delay = 0) {
     const { x, y } = positions[index];
@@ -150,7 +152,10 @@ function drawScene(index, local) {
     line(360, 455, 360, 489, C.teal, 2);
     line(200, 489, 200, 515, C.teal, 2); line(520, 489, 520, 515, C.teal, 2);
   }
-  if (kind === 'brand') {
+  if (kind === 'solution') {
+    ctx.save(); ctx.translate(360, 425); ctx.scale(4 + pulse * .1, 4 + pulse * .1); music(0, 0); ctx.restore();
+    text('הפתרון: Music Room!', 360, 650, 55, C.ink, 'center', 700);
+  } else if (kind === 'brand') {
     ctx.save(); ctx.translate(360, 425); ctx.scale(4 + pulse * .1, 4 + pulse * .1); music(0, 0); ctx.restore();
     text('Music Room', 360, 650, 82, C.ink, 'center', 700);
     ctx.save(); ctx.globalAlpha *= ease((local - .9) / .5);
@@ -159,7 +164,7 @@ function drawScene(index, local) {
     const entry = ease(local / .3);
     ctx.save(); ctx.translate(0, 24 * (1 - entry));
     text('אז מה בעצם', 360, 550, 76, C.ink, 'center', 700);
-    text('הבעייה?', 360, 660, 86, C.orange, 'center', 700); ctx.restore();
+    text('הבעיה?', 360, 660, 86, C.orange, 'center', 700); ctx.restore();
   } else if (kind === 'before') {
     // Everyone finds their own copy, then scrolls at a different pace.
     // No connecting lines: these phones are deliberately independent.
@@ -190,7 +195,7 @@ function drawScene(index, local) {
     mobile(2, { role: 'נגן', mode: local < 1.55 ? 'waiting' : 'song' });
     connections();
     tap(360, 245, (local - .55) / .6);
-    caption({ title: ['המוביל בוחר שיר.'] }, local, .3);
+    caption({ title: ['המוביל בוחר שיר', 'מתוך רשימת שירים', 'מוכנה מראש.'] }, local, .3);
   } else if (kind === 'upload') {
     // File choices are illustrated above; their explanation stays below.
     const entry = ease(local / .4);
@@ -208,7 +213,8 @@ function drawScene(index, local) {
     box(195, 590, 330, 270, 22, C.dark, '#719663');
     paper(210, 605, 300, 240, 0);
     check(555, 815); ctx.restore();
-    caption({ title: ['מוסיפים PDF או תמונות.', 'נשמר גם לפעם הבאה.'] }, local, 1.9);
+    caption({ title: ['אפשר גם להוסיף שיר', 'מהדפדפן, אם הוא לא קיים.'] }, local, .6, 2.8);
+    caption({ title: ['כל השירים זמינים', 'גם לפעמים הבאות.'] }, local, 2.9);
   } else if (kind === 'sync') {
     // Demonstrate the change first. Followers receive it slightly later so the
     // direction of control is visible; captions appear only after they catch up.
@@ -274,6 +280,7 @@ async function syncPreviewMusic() {
   } catch { musicEnabled = false; sound.textContent = 'הפעלת מוזיקה ♫'; status.textContent = 'לא ניתן לנגן מוזיקה בדפדפן הזה.'; }
 }
 function ui() {
+  goHome.hidden = position < DURATION || exporting;
   timeline.value = String(position);
   timeLabel.textContent = `0:${String(Math.floor(position)).padStart(2, '0')} / 0:${DURATION}`;
   play.textContent = playing ? 'השהיה' : 'ניגון ▶';
