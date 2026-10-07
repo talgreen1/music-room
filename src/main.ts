@@ -1,5 +1,7 @@
 import './style.css';
 import QRCode from 'qrcode';
+import { shareIcon, copyIcon } from './icons';
+import { copyRoomUrl } from './clipboard';
 import { RoomService, cloudConfigured, localServerConfigured, songbook, type Connection } from './rooms';
 import { validCode, type Room } from './model';
 import { SongbookViewer } from './viewer';
@@ -44,11 +46,6 @@ function home() {
     <footer><span class="book-dot"></span><span>${safe(songbook.pdfTitle)} · ${safe(songbook.pdfVersion)}</span></footer>
     ${localServerConfigured ? '<aside class="demo-note"><strong>Local development</strong><br>Rooms are shared by this server. Join from another browser, or use your computer’s network address from a phone on the same Wi-Fi. Rooms reset when the server restarts.</aside>' : !cloudConfigured ? '<aside class="demo-note"><strong>Browser-only demo</strong><br>Open a second tab in this browser to try following. Set up Firebase to connect separate browsers or phones.</aside>' : '<p class="privacy">No account needed. Just bring your instrument.</p>'}</main>`;
   const settingsButton = document.createElement('button'); settingsButton.className = 'secondary'; settingsButton.textContent = 'Settings'; settingsButton.id = 'settings'; $('.brand').append(settingsButton);
-  const searchButton = document.createElement('button'); searchButton.className = 'secondary'; searchButton.textContent = 'Search songs'; $('.brand').append(searchButton);
-  searchButton.onclick = () => { closeSheet?.(); closeSheet = showSearchDialog({
-    files: async () => { await service.init(); const [original, songs] = await Promise.all([service.originalPdf(), service.songs()]); return [original, ...songs]; },
-    open: result => { closeSheet = showSongPreview(result.file, result.location); }
-  }); };
   settingsButton.onclick = () => { history.pushState({}, '', '?settings=1'); route(); };
   $('#create').onclick = async () => {
     const button = $<HTMLButtonElement>('#create'); button.disabled = true; button.textContent = 'Creating room…'; message('');
@@ -64,7 +61,7 @@ function home() {
 
 async function openRoom(code: string) {
   cleanup(); const token = generation; master = false; following = true; connection = 'Reconnecting…';
-  app.innerHTML = `<main class="session"><header class="room-header"><button id="leave" class="icon-button" aria-label="Leave room">←</button><div class="room-identity"><span class="small-label">ROOM ${safe(code)}</span><strong id="role">Joining your group…</strong></div><span id="connection" class="connection" role="status">Reconnecting…</span><button id="share" class="secondary compact">Share</button></header>${!cloudConfigured ? localServerConfigured ? '<div class="demo-bar">LOCAL DEVELOPMENT · Shared across browsers</div>' : '<div class="demo-bar">BROWSER-ONLY DEMO · Same-browser tabs only</div>' : ''}<div id="notice" class="notice room-notice" role="alert" hidden></div><div id="pdf" class="pdf-host" tabindex="0" aria-label="Songbook"></div><nav class="toolbar" aria-label="Songbook controls"><button id="previous" class="icon-button" aria-label="Previous page">‹</button><form id="page-form"><label class="sr-only" for="page">Page number</label><input id="page" type="number" min="1" value="1" aria-label="Page number"/><span id="count"> / —</span></form><button id="next" class="icon-button" aria-label="Next page">›</button><div class="toolbar-divider"></div><button id="zoom-out" class="icon-button" aria-label="Zoom out">−</button><span id="zoom">100%</span><button id="zoom-in" class="icon-button" aria-label="Zoom in">+</button></nav></main><dialog id="share-dialog"><form method="dialog"><button class="dialog-close icon-button" aria-label="Close">×</button></form><p class="eyebrow">INVITE YOUR GROUP</p><h2>Room ${safe(code)}</h2><canvas id="qr"></canvas><p id="share-url"></p><button id="copy" class="primary">Copy room link</button><p id="copy-status" role="status"></p></dialog>`;
+  app.innerHTML = `<main class="session"><header class="room-header"><button id="leave" class="icon-button" aria-label="Leave room">←</button><div class="room-identity"><span class="small-label">ROOM ${safe(code)}</span><strong id="role">Joining your group…</strong></div><span id="connection" class="connection" role="status">Reconnecting…</span><button id="share" class="icon-button" aria-label="Share room" title="Share room">${shareIcon}</button></header>${!cloudConfigured ? localServerConfigured ? '<div class="demo-bar">LOCAL DEVELOPMENT · Shared across browsers</div>' : '<div class="demo-bar">BROWSER-ONLY DEMO · Same-browser tabs only</div>' : ''}<div id="notice" class="notice room-notice" role="alert" hidden></div><div id="pdf" class="pdf-host" tabindex="0" aria-label="Songbook"></div><nav class="toolbar" aria-label="Songbook controls"><button id="previous" class="icon-button" aria-label="Previous page">‹</button><form id="page-form"><label class="sr-only" for="page">Page number</label><input id="page" type="number" min="1" value="1" aria-label="Page number"/><span id="count"> / —</span></form><button id="next" class="icon-button" aria-label="Next page">›</button><div class="toolbar-divider"></div><button id="zoom-out" class="icon-button" aria-label="Zoom out">−</button><span id="zoom">100%</span><button id="zoom-in" class="icon-button" aria-label="Zoom in">+</button></nav></main><dialog id="share-dialog"><form method="dialog"><button class="dialog-close icon-button" aria-label="Close">×</button></form><p class="eyebrow">INVITE YOUR GROUP</p><h2>Room ${safe(code)}</h2><canvas id="qr"></canvas><p id="share-url"></p><div class="share-actions"><button id="native-share" class="icon-button" aria-label="Share room link" title="Share room link">${shareIcon}</button><button id="copy" class="icon-button" aria-label="Copy room link" title="Copy room link">${copyIcon}</button></div><p id="copy-status" role="status"></p></dialog>`;
   $('#leave').onclick = () => { history.pushState({}, '', '/'); home(); };
   const settingsButton = document.createElement('button');
   settingsButton.className = 'icon-button'; settingsButton.textContent = '⚙';
@@ -94,8 +91,18 @@ async function openRoom(code: string) {
   $('#share').onclick = async () => {
     const url = new URL(location.href); url.search = `?room=${code}`;
     const dialog = $<HTMLDialogElement>('#share-dialog'); $('#share-url').textContent = url.href; dialog.showModal();
+    const nativeShare = $<HTMLButtonElement>('#native-share');
+    $('#copy-status').textContent = '';
+    nativeShare.disabled = typeof navigator.share !== 'function';
+    if (nativeShare.disabled) $('#copy-status').textContent = 'Sharing is unavailable in this browser. Copy the room link instead.';
+    nativeShare.onclick = async () => {
+      try { await navigator.share({ title: `Music Room ${code}`, url: url.href }); }
+      catch (error) { if (!(error instanceof DOMException && error.name === 'AbortError')) $('#copy-status').textContent = 'Could not share. Copy the room link instead.'; }
+    };
     try { await QRCode.toCanvas($<HTMLCanvasElement>('#qr'), url.href, { width: 220, margin: 2 }); } catch { $('#copy-status').textContent = 'QR unavailable. Use the room link.'; }
-    $('#copy').onclick = async () => { try { await navigator.clipboard.writeText(url.href); $('#copy-status').textContent = 'Link copied.'; } catch { $('#copy-status').textContent = 'Copy the link above to share.'; } };
+    $('#copy').onclick = async () => {
+      $('#copy-status').textContent = await copyRoomUrl(url.href, dialog) ? 'Link copied.' : 'Copy failed. Press and hold the room link above, then choose Copy.';
+    };
   };
   const pdfFrame = document.createElement('div'); pdfFrame.className = 'pdf-frame';
   $('#pdf').before(pdfFrame); pdfFrame.append($('#pdf'));
