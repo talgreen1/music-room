@@ -342,6 +342,14 @@ Deployment evidence (2026-10-06): Firebase CLI validated and released the update
 
 ## Future backlog: not part of version 1
 
+## Sharing controls (2026-10-07)
+
+- [x] **SH-001 - Compact sharing icons.** Replace the room-header Share text with the standard share SVG. The invitation dialog provides separate share and copy icons with accessible names; copy writes the room URL and confirms success.
+- [x] **SH-002 - Native share action.** Invoke the browser's native share sheet from a button press, with the room title and URL. Cancellation is silent; unsupported browsers retain copy/QR with an explanation. Build and local dialog/copy verification pass.
+- [x] **SH-003 - Phone acceptance and deployment.** User confirmed sharing/copy works on HTTPS. The final Hosting build also removes Search songs from Home while retaining room/Settings search; 63 tests and deployment build passed. GitHub release proceeds through the share-icons PR.
+
+Hosting deployed on 2026-10-07. Live HTTPS checks confirm separate share/copy icons, enabled native share and copy success feedback. Copy now uses a synchronous selected field inside the modal, with the secure clipboard API as fallback, after the user reported no copied URL. Actual copy/paste and native share-sheet acceptance require phone verification: browser automation uses a separate virtual clipboard and cannot verify the operating-system clipboard. GitHub release remains pending.
+
 - [ ] **F-001 - Add a built-in song index.** As a musician, I can choose a song name to navigate to its page. Acceptance when scoped: versioned mapping agrees with the current PDF, including index-page offsets.
 - [ ] **F-002 - Add favorites.** As a musician, I can save favorite songs locally. Acceptance when scoped: favorites use stable source/song IDs and handle PDF version changes.
 - [ ] **F-003 - Add recent rooms.** As a participant, I can reopen a recent room. Acceptance when scoped: expiry/missing-room handling and no leaked Master credentials.

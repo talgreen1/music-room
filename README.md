@@ -241,7 +241,7 @@ Every room pins its URL/version/title at creation. Active rooms keep the same bo
 
 ## Song search
 
-Use **Search songs** on Home or Settings to search the original songbook and every available library file. Search always starts with **All files**, the first scope option. In a room, choose **Current file** to limit the search, or use **Search all files** in the Master menu. Enter a song, artist or file name and press Enter or Search; submission dismisses the mobile keyboard to expose results. Results show the file, matching text and destination page. Click a result to open it. Linked PDF index results open their song destination rather than the index page.
+Use **Search songs** in Settings or a room to search the original songbook and every available library file. Search always starts with **All files**, the first scope option. In a room, choose **Current file** to limit the search, or use **Search all files** in the Master menu. Enter a song, artist or file name and press Enter or Search; submission dismisses the mobile keyboard to expose results. Results show the file, matching text and destination page. Click a result to open it. Linked PDF index results open their song destination rather than the index page.
 
 Master selections update the room for everyone. A Follower can jump within the current file using the existing three-second browsing pause, or preview another file privately. Home and Settings results open a preview. Manual Master-sync preferences remain unchanged.
 
