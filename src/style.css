@@ -19,3 +19,4 @@
 .share-actions{display:flex;justify-content:center;gap:24px}.share-actions #copy{width:auto}.share-actions .icon-button,#share{display:inline-flex;align-items:center;justify-content:center}
 .room-upload-list{padding:8px 0 14px;font-size:13px}.room-upload-list summary{cursor:pointer;padding:8px;color:var(--accent)}.room-upload-list button{display:block;width:100%;text-align:start;margin-top:8px;overflow-wrap:anywhere}.room-delete-dialog .settings-actions{display:flex;flex-direction:column;gap:12px}.room-delete-dialog p{font-size:13px;line-height:1.6}
 .upload-pickers{display:flex;flex-wrap:wrap;gap:12px}.upload-pickers .sheet-picker{flex:1;min-width:150px;text-align:center}
+.room-identity .small-label{font-size:15px;font-weight:700;letter-spacing:1px;line-height:1.2}.room-header .room-search{display:inline-flex;align-items:center;justify-content:center;padding:2px}.room-header .room-search svg{width:26px;height:26px}.room-header .room-search[hidden]{display:none}
