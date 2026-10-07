@@ -342,6 +342,11 @@ Deployment evidence (2026-10-06): Firebase CLI validated and released the update
 
 ## Future backlog: not part of version 1
 
+## Separate upload pickers (2026-10-07)
+
+- [x] **UP-001 - Split PDF and screenshot selection.** Master and Settings reuse separate Choose PDF (single application/pdf or .pdf) and Choose screenshots (multiple PNG/JPEG/WebP) inputs. Neither requests camera capture. Optional naming, PDF validation, stitching and library saving remain shared. Cancelling preserves the current selection; choosing the same file again works. Type checking and build pass.
+- [x] **UP-002 - Phone chooser acceptance and deployment.** User confirmed the split pickers work. Deployment build passed and Firebase Hosting published on 2026-10-07; source release proceeds through the separate-upload-pickers PR. Screenshot selection may still offer Camera because the browser owns that chooser.
+
 ## Persistent room uploads and Settings cleanup (2026-10-07)
 
 - [x] **RF-001 - Permanent reusable uploads.** Completed Master/Settings uploads remain in the shared catalog and Storage for future rooms. Room expiry and deletion with keep-files do not remove them. Existing upload/default permissions are preserved.

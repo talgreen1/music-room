@@ -12,11 +12,11 @@ export interface SheetDialogOptions { libraryOnly?: boolean; onSaved?: () => voi
 /** All stitching stays on this device; publish only after every segment uploads. */
 export function showSheetDialog(service: ScreenshotDestination, initialFiles?: File[], options: SheetDialogOptions = {}): () => void {
   const dialog = document.createElement('dialog'); dialog.className = 'sheet-dialog';
-  dialog.innerHTML = `<button class="dialog-close icon-button" aria-label="Close screenshots">×</button><h2>Add file/song</h2><p>Choose one PDF, or one or more screenshots. For screenshots, capture the page from top to bottom, with overlapping content. Keep the same zoom in every screenshot. Set transposition on the website before capturing.</p><label>File/song name (optional)<input class="sheet-title" maxlength="120" placeholder="Leave blank to use the file name"></label><label class="secondary sheet-picker">Choose PDF or screenshots<input type="file" accept="application/pdf,.pdf,image/png,image/jpeg,image/webp" multiple></label><p class="sheet-status" role="status"></p><ol class="capture-list"></ol><div class="sheet-actions"><button class="secondary auto-stitch" disabled>Auto stitch</button><button class="secondary preview-sheet" disabled>Update preview</button><button class="primary publish-sheet" disabled>Share with room</button></div><div class="sheet-preview" aria-label="Stitched preview"></div>`;
+  dialog.innerHTML = `<button class="dialog-close icon-button" aria-label="Close screenshots">×</button><h2>Add file/song</h2><p>Choose one PDF, or one or more screenshots. For screenshots, capture the page from top to bottom, with overlapping content. Keep the same zoom in every screenshot. Set transposition on the website before capturing.</p><label>File/song name (optional)<input class="sheet-title" maxlength="120" placeholder="Leave blank to use the file name"></label><div class="upload-pickers"><label class="secondary sheet-picker">Choose PDF<input class="pdf-picker" type="file" accept="application/pdf,.pdf"></label><label class="secondary sheet-picker">Choose screenshots<input class="screenshots-picker" type="file" accept="image/png,image/jpeg,image/webp" multiple></label></div><p class="sheet-status" role="status"></p><ol class="capture-list"></ol><div class="sheet-actions"><button class="secondary auto-stitch" disabled>Auto stitch</button><button class="secondary preview-sheet" disabled>Update preview</button><button class="primary publish-sheet" disabled>Share with room</button></div><div class="sheet-preview" aria-label="Stitched preview"></div>`;
   document.body.append(dialog); dialog.showModal();
   const get = <T extends HTMLElement>(selector: string) => dialog.querySelector<T>(selector)!;
   const status = get<HTMLParagraphElement>('.sheet-status');
-  const input = get<HTMLInputElement>('input[type=file]');
+  const inputs = dialog.querySelectorAll<HTMLInputElement>('input[type=file]');
   const auto = get<HTMLButtonElement>('.auto-stitch'), preview = get<HTMLButtonElement>('.preview-sheet'), publish = get<HTMLButtonElement>('.publish-sheet');
   if (options.libraryOnly) { publish.textContent = 'Save to library'; }
   let pdf: File | undefined;
@@ -72,7 +72,10 @@ export function showSheetDialog(service: ScreenshotDestination, initialFiles?: F
     captures = await inspectCaptures(files, progress); await autoStitch(captures, progress);
     if (closed) return; renderList(); await makePreview();
   });
-  input.onchange = () => void loadFiles(Array.from(input.files || []));
+  inputs.forEach(input => input.onchange = () => {
+    const files = Array.from(input.files || []); input.value = '';
+    if (files.length) void loadFiles(files);
+  });
   auto.onclick = () => void work(async () => { clearPreview(); await autoStitch(captures, progress); if (closed) return; renderList(); await makePreview(); });
   preview.onclick = () => void work(makePreview);
   publish.onclick = () => void work(async () => {
