@@ -3,10 +3,17 @@ import { showSheetDialog } from './sheet-dialog';
 import { showSearchDialog } from './search-dialog';
 import { showSongPreview } from './song-dialog';
 import { isPdfFile, type SharedFile } from './sheets';
+import { roomUploads } from './song-library';
+import { showRoomDeleteDialog } from './room-delete-dialog';
 
 export function showSettings(app: HTMLElement, back: () => void) {
   const service = new SettingsService();
   let alive = true; let closePreview: (() => void) | undefined;
+  let closeDeletion: (() => void) | undefined;
+  const deletionChoice = async (label: string, count: number) => {
+    const choice = showRoomDeleteDialog(label, count); closeDeletion = choice.close;
+    const result = await choice.result; closeDeletion = undefined; return result;
+  };
   app.innerHTML = `<main class="settings"><header><button id="settings-back" class="secondary">Back</button><h1>Settings</h1><button id="settings-logout" class="secondary" hidden>Lock</button></header>
     <p id="settings-status" role="status"></p><form id="settings-login" class="entry-card"><label for="settings-password">Settings password</label><input id="settings-password" type="password" autocomplete="current-password" autofocus required><button class="primary" type="submit">Unlock settings</button></form>
     <section id="settings-content" hidden><section class="entry-card"><h2>Rooms</h2><div class="settings-actions"><button id="rooms-refresh" class="secondary">Refresh</button><button id="rooms-delete-all" class="danger">Delete all rooms</button></div><p>Deleting a room disconnects its participants.</p><div id="settings-rooms"></div></section>
@@ -14,24 +21,34 @@ export function showSettings(app: HTMLElement, back: () => void) {
   const $ = <T extends HTMLElement = HTMLElement>(selector: string) => app.querySelector<T>(selector)!;
   const report = (text: string) => { if (alive) $('#settings-status').textContent = text; };
   const fail = (error: unknown) => report(error instanceof Error ? error.message : 'Settings operation failed.');
-  const dispose = () => { if (!alive) return; alive = false; closePreview?.(); void service.logout().catch(() => {}); };
+  const dispose = () => { if (!alive) return; alive = false; closeDeletion?.(); closePreview?.(); void service.logout().catch(() => {}); };
   const leave = () => { dispose(); back(); };
   $('#settings-back').onclick = leave;
   const lock = async () => { closePreview?.(); await service.logout(); if (!alive) return; $('#settings-login').hidden = false; $('#settings-content').hidden = true; $('#settings-logout').hidden = true; $('#settings-rooms').replaceChildren(); $('#settings-songs').replaceChildren(); };
   $('#settings-logout').onclick = () => void lock().catch(fail);
   async function refresh() {
-    const rooms = await service.rooms(); if (!alive) return;
+    const [rooms, songs] = await Promise.all([service.rooms(), service.songs()]); if (!alive) return;
     const list = $('#settings-rooms'); list.replaceChildren();
     for (const [code, room] of Object.entries(rooms).sort()) {
       const row = document.createElement('div'); row.className = 'settings-room';
       const text = document.createElement('span'); text.textContent = `${code} · ${room.sheet?.title || room.pdfTitle} · page ${room.position.page} · ${room.expiresAt > Date.now() ? 'Active' : 'Expired'}`;
       const remove = document.createElement('button'); remove.className = 'danger'; remove.textContent = 'Delete'; remove.setAttribute('aria-label', `Delete room ${code}`);
+      const uploads = roomUploads(songs, { [code]: room });
+      const details = document.createElement('details'); details.className = 'room-upload-list';
+      const summary = document.createElement('summary'); summary.textContent = `Uploaded files (${uploads.length})`; details.append(summary);
+      for (const file of uploads) {
+        const view = document.createElement('button'); view.className = 'secondary'; view.textContent = `${file.title} | ${isPdfFile(file) ? 'PDF' : 'Images'}`;
+        view.setAttribute('aria-label', `View ${file.title} uploaded in room ${code}`);
+        view.onclick = () => { closePreview?.(); closePreview = showSongPreview(file); }; details.append(view);
+      }
+      if (!uploads.length) { const note = document.createElement('p'); note.textContent = 'No files uploaded here. Selecting an existing library file does not count as an upload.'; details.append(note); }
       remove.onclick = async () => {
-        if (!confirm(`Delete room ${code} and disconnect its participants?`)) return;
         remove.disabled = true;
-        try { await service.deleteRooms(code); await refresh(); report(`Room ${code} deleted.`); } catch (error) { fail(error); remove.disabled = false; }
+        const deleteFiles = await deletionChoice(`room ${code}`, uploads.length);
+        if (deleteFiles === undefined || !alive) { remove.disabled = false; return; }
+        try { await service.deleteRooms(code, deleteFiles); await refresh(); await refreshSongs(); report(`Room ${code} deleted. ${deleteFiles ? 'Uploaded files deleted; the default is kept.' : 'Files kept for future rooms.'}`); } catch (error) { fail(error); remove.disabled = false; }
       };
-      row.append(text, remove); list.append(row);
+      row.append(text, remove); list.append(row, details);
     }
     if (!Object.keys(rooms).length) list.textContent = 'No rooms.';
     $<HTMLButtonElement>('#rooms-delete-all').disabled = !Object.keys(rooms).length;
@@ -46,6 +63,8 @@ export function showSettings(app: HTMLElement, back: () => void) {
       const name = document.createElement('span');
       name.textContent = `${song.title} | ${isPdfFile(song) ? 'PDF' : 'Images'}${song.id === defaultId ? ' | Default' : ''}`;
       const view = document.createElement('button'); view.className = 'secondary'; view.textContent = 'View'; view.setAttribute('aria-label', `View file ${song.title}`);
+      const saved = songs.find(file => file.id === song.id);
+      if (saved) name.textContent += ` | ${saved.roomCode ? `Uploaded in room ${saved.roomCode}` : 'Uploaded in Settings'} | ${new Date(saved.createdAt).toLocaleString()}`;
       view.onclick = () => { closePreview?.(); closePreview = showSongPreview(song); };
       const makeDefault = document.createElement('button'); makeDefault.className = 'secondary'; makeDefault.textContent = song.id === defaultId ? 'Default' : 'Make default';
       makeDefault.disabled = song.id === defaultId; makeDefault.setAttribute('aria-label', `Make default: ${song.title}`);
@@ -60,7 +79,7 @@ export function showSettings(app: HTMLElement, back: () => void) {
         remove.onclick = async () => {
           if (!confirm(`Delete "${song.title}" from the file library?`)) return;
           remove.disabled = true;
-          try { await service.deleteSong(song.id); await refreshSongs(); report('File deleted from the library.'); } catch (error) { fail(error); await refreshSongs().catch(() => {}); }
+          try { await service.deleteSong(song.id); await refreshSongs(); await refresh(); report('File deleted from the library.'); } catch (error) { fail(error); await refreshSongs().catch(() => {}); }
         };
         row.append(remove);
       }
@@ -76,7 +95,7 @@ export function showSettings(app: HTMLElement, back: () => void) {
       $('#settings-login').hidden = true; $('#settings-content').hidden = false; $('#settings-logout').hidden = false;
     } catch (error) { fail(error); } finally { if (alive) button.disabled = false; }
   };
-  $('#songs-add').onclick = () => { closePreview?.(); closePreview = showSheetDialog(service, undefined, { libraryOnly: true, onSaved: async () => { if (!alive) return; report('File saved.'); await refreshSongs().catch(fail); } }); };
+  $('#songs-add').onclick = () => { closePreview?.(); closePreview = showSheetDialog(service, undefined, { libraryOnly: true, onSaved: async () => { if (!alive) return; report('File saved.'); await refreshSongs().catch(fail); await refresh().catch(fail); } }); };
   $('#songs-search').onclick = () => { closePreview?.(); closePreview = showSearchDialog({
     files: async () => { const [original, songs] = await Promise.all([service.defaultPdf(), service.songs()]); return [{ id: 'pdf', title: original.pdfTitle, pdfUrl: original.pdfUrl }, ...songs]; },
     open: result => { closePreview = showSongPreview(result.file, result.location); }
@@ -84,9 +103,13 @@ export function showSettings(app: HTMLElement, back: () => void) {
   $('#songs-refresh').onclick = () => void refreshSongs().catch(fail);
   $('#rooms-refresh').onclick = () => void refresh().catch(fail);
   $('#rooms-delete-all').onclick = async () => {
-    if (!confirm('Delete ALL rooms and disconnect all participants?')) return;
     const button = $<HTMLButtonElement>('#rooms-delete-all'); button.disabled = true;
-    try { await service.deleteRooms(); await refresh(); report('All rooms deleted.'); } catch (error) { fail(error); button.disabled = false; }
+    try {
+      const [rooms, songs] = await Promise.all([service.rooms(), service.songs()]); if (!alive) return;
+      const deleteFiles = await deletionChoice('all rooms', roomUploads(songs, rooms).length);
+      if (deleteFiles === undefined || !alive) { button.disabled = false; return; }
+      await service.deleteRooms(undefined, deleteFiles); await refresh(); await refreshSongs(); report(`All rooms deleted. ${deleteFiles ? 'Uploaded files deleted; the default is kept.' : 'Files kept for future rooms.'}`);
+    } catch (error) { fail(error); button.disabled = false; }
   };
   $<HTMLInputElement>('#settings-password').focus({ preventScroll: true });
   return dispose;

@@ -41,6 +41,14 @@ export class SongLibrary {
   delete(id: string) {
     return this.mutate(async () => { if (id === this.defaultId) throw new Error('Choose another default before deleting this file.'); const song = this.records[id]; if (song) song.deletedAt = this.now(); });
   }
+  deleteMany(ids: string[]) {
+    return this.mutate(async () => {
+      for (const id of ids) {
+        if (id === this.defaultId) continue;
+        const song = this.records[id]; if (song && song.deletedAt === undefined) song.deletedAt = this.now();
+      }
+    });
+  }
   cleanup(activeIds: Set<string>) {
     return this.mutate(async () => {
       for (const song of unusedDeletedSongs(this.records, activeIds)) {

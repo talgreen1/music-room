@@ -74,6 +74,15 @@ try {
   const foreignUpload = await storage(follower.user, `room-pdfs/${files[0].path}`, 'POST', bytes); assert.ok(!foreignUpload.ok); await foreignUpload.arrayBuffer();
   const deletion = await storage(follower.user, 'room-pdfs', 'DELETE', JSON.stringify({ prefixes: [files[1].path] }), 'application/json'); await deletion.arrayBuffer();
   assert.deepEqual(Buffer.from(await (await fetch(second.pdfUrl)).arrayBuffer()), bytes, 'Followers cannot delete PDF bytes.');
+  await remove(ref(dbs[2], `rooms/${defaultRoom}`));
+  assert.ok((await get(ref(dbs[2], `songs/${first.id}`))).exists(), 'Room deletion keeps default uploads.');
+  await denied(() => update(ref(dbs[2]), { [`rooms/${code}`]: null, [`songs/${first.id}/deletedAt`]: serverTimestamp() }));
+  assert.ok((await get(ref(dbs[2], `rooms/${code}`))).exists(), 'Protected-default rejection is atomic with room removal.');
+  await denied(() => update(ref(dbs[1]), { [`rooms/${code}`]: null, [`songs/${second.id}/deletedAt`]: serverTimestamp() }));
+  await update(ref(dbs[2]), { [`rooms/${code}`]: null, [`songs/${second.id}/deletedAt`]: serverTimestamp() });
+  assert.equal((await get(ref(dbs[2], `rooms/${code}`))).exists(), false);
+  assert.ok((await get(ref(dbs[2], `songs/${second.id}/deletedAt`))).exists());
+  console.log('PASS: keep-files room removal, atomic room/file tombstoning and protected-default/unauthorized rejection.');
   console.log('PASS: Master/Settings PDF uploads and exact downloads, immutability, owned paths, PDF room creation/switching and position sync, denied Followers/default/deletion, current-default protection and deleted-source rejection.');
 } catch (error) { failed = true; console.error(error); }
 finally {

@@ -342,6 +342,17 @@ Deployment evidence (2026-10-06): Firebase CLI validated and released the update
 
 ## Future backlog: not part of version 1
 
+## Persistent room uploads and Settings cleanup (2026-10-07)
+
+- [x] **RF-001 - Permanent reusable uploads.** Completed Master/Settings uploads remain in the shared catalog and Storage for future rooms. Room expiry and deletion with keep-files do not remove them. Existing upload/default permissions are preserved.
+- [x] **RF-002 - Settings file management.** List available PDFs/image songs, preview/delete them, and display upload room/date. Only Settings manages the global default; current-default deletion remains protected.
+- [x] **RF-003 - Per-room uploads.** Expand Uploaded files for each room and preview its uploads. Existing-file selection is not an upload; uploader/lifetime checks protect older files when codes are reused.
+- [x] **RF-004 - Explicit deletion policy.** Single-room and all-room deletion offer keep-files, delete-files and cancel. Keep is first; delete targets only those rooms' uploads and retains the global default and files displayed in other active rooms.
+- [x] **RF-005 - Local verification.** 65 tests, type checking/build and disposable HTTP integration pass. Checks cover future-room reuse, attribution, unrelated files/default retention, rejected unauthenticated/invalid operations, and deferred byte cleanup. Browser verified origin/date list, upload-count details, keep/delete/cancel dialog and cancellation leaving the room intact.
+- [ ] **RF-006 - Phone/cloud acceptance and release.** Verify room upload previews and both choices on a phone; verify cloud multi-path deletion/default protection with disposable fixtures, then deploy and release when requested.
+
+Release evidence (2026-10-07): all 65 tests and deployment build pass. Cloud regression verified keep-files removal, atomic room/file tombstoning, protected-default rejection without partial room removal, and unauthorized rejection. Restored the default and removed disposable rooms/files. Hosting published; source release proceeds through the room-file-retention PR. Physical-phone acceptance remains pending.
+
 ## Sharing controls (2026-10-07)
 
 - [x] **SH-001 - Compact sharing icons.** Replace the room-header Share text with the standard share SVG. The invitation dialog provides separate share and copy icons with accessible names; copy writes the room URL and confirms success.

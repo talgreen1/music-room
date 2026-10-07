@@ -239,6 +239,16 @@ Defaults work without PDF environment settings. To publish a replacement:
 
 Every room pins its URL/version/title at creation. Active rooms keep the same book even when a newer version is published. External PDF hosts must allow CORS. Search reads existing PDF text; screenshots and image-only PDF pages are searchable by file name/title only. No OCR is used.
 
+## Persistent uploads and room cleanup
+
+Every completed PDF or screenshot upload is saved in the shared library and remains selectable in future rooms. Files are not removed when the upload room expires or is deleted with **keep files**. Default selection and deletion remain Settings-only actions.
+
+Settings lists all available library files with upload origin/date, preview and deletion controls. Each room has an expandable **Uploaded files** list with previews. This lists files actually uploaded in that room, rather than existing files selected from the library. Room code, uploader and upload timestamp identify the origin; older uploads are not attributed to a newly reused room code.
+
+Deleting one room or all rooms asks whether to **keep files**, **delete room(s) and files**, or **cancel**. Keep is the first option. Delete removes only uploads originating in those rooms; Settings uploads and other-room uploads stay in the library. The current default is always protected. A deleted file still displayed in another active room keeps its stored bytes until that room switches away or expires. Selecting it in new rooms is blocked immediately.
+
+Local bulk file changes are serialized and persisted before removing rooms. Cloud deletion uses a single Firebase multi-path update to remove the selected rooms and tombstone their uploads, then runs the existing deferred Storage cleanup. No new cloud service or database schema is needed. Run `node scripts/test-room-files.mjs` against the development server to verify keep/delete behavior using disposable fixtures.
+
 ## Song search
 
 Use **Search songs** in Settings or a room to search the original songbook and every available library file. Search always starts with **All files**, the first scope option. In a room, choose **Current file** to limit the search, or use **Search all files** in the Master menu. Enter a song, artist or file name and press Enter or Search; submission dismisses the mobile keyboard to expose results. Results show the file, matching text and destination page. Click a result to open it. Linked PDF index results open their song destination rather than the index page.

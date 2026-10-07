@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
 import { MAX_ZOOM, MIN_ZOOM, type Room, type Position } from '../src/model';
 import { SongLibrary } from './song-library';
+import { roomUploads } from '../src/song-library';
 import { AdminSessions } from './admin-auth';
 import { validateSongbook, validatePdfUpload, MAX_PDF_BYTES, type Songbook } from '../src/songbook';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -195,7 +196,14 @@ export function localRoomsPlugin(env: Record<string, string> = {}): Plugin {
             }
             if (url.pathname === '/api/admin/rooms' && req.method === 'GET') { json(res, 200, store.list()); return; }
             const target = /^\/api\/admin\/rooms(?:\/(\d{6}))?$/.exec(url.pathname);
-            if (target && req.method === 'DELETE') { store.delete(target[1]); await library.cleanup(activeSongIds()); json(res, 200, { ok: true }); return; }
+            if (target && req.method === 'DELETE') {
+              const input = Number(req.headers['content-length']) > 0 || req.headers['transfer-encoding'] ? await body(req) : {};
+              if (input.deleteFiles !== undefined && typeof input.deleteFiles !== 'boolean') throw new Error('Invalid file deletion choice.');
+              const rooms = store.list(), code = target[1];
+              const selected = code ? (rooms[code] ? { [code]: rooms[code] } : {}) : rooms;
+              if (input.deleteFiles === true) await library.deleteMany(roomUploads(await library.list(), selected).map(song => song.id));
+              store.delete(code); await library.cleanup(activeSongIds()); json(res, 200, { ok: true }); return;
+            }
             if (url.pathname === '/api/admin/songbook' && req.method === 'PUT') {
               const value = validateSongbook(await body(req) as unknown as Songbook);
               await mkdir('.local-data', { recursive: true }); await writeFile('.local-data/songbook.json', JSON.stringify(value)); current = value;

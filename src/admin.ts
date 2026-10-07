@@ -4,7 +4,7 @@ import { getDatabase, get, ref, remove, set, update, serverTimestamp, runTransac
 import { cloudConfigured, localServerConfigured, songbook } from './rooms';
 import { validateSongbook, type Songbook } from './songbook';
 import { validateFile, isPdfFile, fileUrls, MAX_IMAGE_BYTES, type SharedFile } from './sheets';
-import { availableSongs, unusedDeletedSongs, type SavedSong } from './song-library';
+import { availableSongs, unusedDeletedSongs, roomUploads, type SavedSong } from './song-library';
 import { uploadLibraryPdf } from './file-upload';
 import type { Room } from './model';
 import { settingsCredential } from './settings-password.mjs';
@@ -30,9 +30,19 @@ export class SettingsService {
   }
   async logout() { if (localServerConfigured) await this.request('logout', 'POST'); else if (cloudConfigured) await signOut(this.cloud().auth); }
   async rooms(): Promise<Record<string, Room>> { return localServerConfigured ? this.request('rooms') : (await get(ref(this.cloud().db, 'rooms'))).val() || {}; }
-  async deleteRooms(code?: string) {
-    if (localServerConfigured) await this.request(`rooms${code ? `/${code}` : ''}`, 'DELETE');
-    else { await remove(ref(this.cloud().db, `rooms${code ? `/${code}` : ''}`)); await this.cleanupSongs(); }
+  async deleteRooms(code?: string, deleteFiles = false) {
+    if (code !== undefined && !/^\d{6}$/.test(code)) throw new Error('Invalid room code.');
+    if (localServerConfigured) await this.request(`rooms${code ? `/${code}` : ''}`, 'DELETE', { deleteFiles });
+    else {
+      const { db } = this.cloud();
+      const [rooms, songs, defaultId] = await Promise.all([this.rooms(), this.songs(), this.defaultFile()]);
+      const selected = code ? (rooms[code] ? { [code]: rooms[code] } : {}) : rooms;
+      const changes: Record<string, unknown> = {};
+      for (const roomCode of Object.keys(selected)) changes[`rooms/${roomCode}`] = null;
+      if (deleteFiles) for (const song of roomUploads(songs, selected)) if (song.id !== defaultId) changes[`songs/${song.id}/deletedAt`] = serverTimestamp();
+      if (Object.keys(changes).length) await update(ref(db), changes);
+      await this.cleanupSongs();
+    }
   }
   async uploadSegment(blob: Blob, sheetId: string, index: number): Promise<string> {
     if (blob.type !== 'image/jpeg' || !blob.size || blob.size > MAX_IMAGE_BYTES || !/^[a-f0-9]{32}$/.test(sheetId) || !Number.isInteger(index) || index < 0 || index >= 40) throw new Error('Invalid screenshot segment.');

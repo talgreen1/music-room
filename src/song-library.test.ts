@@ -3,12 +3,29 @@ import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep, basename } from 'node:path';
 import { SongLibrary } from '../server/song-library';
-import { availableSongs, unusedDeletedSongs } from './song-library';
+import { availableSongs, unusedDeletedSongs, roomUploads } from './song-library';
+import type { Room } from './model';
 const folders: string[] = [];
 afterEach(async () => { for (const folder of folders.splice(0)) { if (!resolve(folder).startsWith(resolve(tmpdir()) + sep) || !basename(folder).startsWith('music-room-library-')) throw new Error('Unexpected test cleanup path.'); await rm(folder, { recursive: true, force: true }); } });
 const sheet = { id: 'a'.repeat(32), title: 'My song', segments: [{ url: `/api/sheets/${'b'.repeat(32)}.jpg`, width: 480, height: 800 }] };
 async function fixture() { const folder = await mkdtemp(join(tmpdir(), 'music-room-library-')); folders.push(folder); await mkdir(join(folder, 'sheets')); await writeFile(join(folder, 'sheets', `${'b'.repeat(32)}.jpg`), 'fixture'); return folder; }
 describe('persistent saved songs', () => {
+  it('identifies uploads by origin, uploader and room lifetime, excluding reused room codes', () => {
+    const room: Room = { masterId: 'creator', createdAt: 1000, expiresAt: 2000, pdfUrl: '/book.pdf', pdfTitle: 'Book', pdfVersion: 'v1', position: { page: 1, offset: 0, zoom: 1, updatedAt: 1000 } };
+    const song = { ...sheet, ownerId: 'creator', roomCode: '123456', createdAt: 1500 };
+    expect(roomUploads([song, { ...song, createdAt: 900 }, { ...song, ownerId: 'other' }, { ...song, roomCode: undefined }, { ...song, deletedAt: 1600 }, { ...song, createdAt: 2100 }], { '123456': room })).toEqual([song]);
+    expect(roomUploads([song], { '654321': { ...room, sheet } })).toEqual([]);
+  });
+  it('bulk room-file deletion preserves the default, unrelated uploads and active file bytes', async () => {
+    const folder = await fixture(), library = new SongLibrary(folder, () => 1500);
+    await library.save(sheet, 'creator', '123456');
+    const defaultFile = { ...sheet, id: 'c'.repeat(32), title: 'Default' }, unrelated = { ...sheet, id: 'd'.repeat(32), title: 'Other room' };
+    await library.save(defaultFile, 'creator', '123456'); await library.save(unrelated, 'creator', '654321'); await library.setDefault(defaultFile.id);
+    await library.deleteMany([sheet.id, defaultFile.id]);
+    expect((await new SongLibrary(folder).list()).map(file => file.id).sort()).toEqual([defaultFile.id, unrelated.id].sort());
+    await library.cleanup(new Set([sheet.id])); expect(await readFile(join(folder, 'sheets', `${'b'.repeat(32)}.jpg`), 'utf8')).toBe('fixture');
+    expect(await library.defaultFile()).toBe(defaultFile.id);
+  });
   it('persists a Settings import without any room metadata', async () => {
     const folder = await fixture(), library = new SongLibrary(folder);
     await library.save(sheet, 'settings-admin');
