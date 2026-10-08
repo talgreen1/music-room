@@ -5,7 +5,7 @@ export type SavedSong = SharedFile & { ownerId: string; roomCode?: string; creat
 export function roomUploads(songs: SavedSong[], rooms: Record<string, Room>): SavedSong[] {
   return songs.filter(song => {
     const room = song.roomCode ? rooms[song.roomCode] : undefined;
-    return room && song.ownerId === room.masterId && song.createdAt >= room.createdAt && song.createdAt <= room.expiresAt && song.deletedAt === undefined;
+    return room && song.createdAt >= room.createdAt && song.createdAt <= room.expiresAt && song.deletedAt === undefined;
   });
 }
 export function validateSavedSong(value: SavedSong): SavedSong {

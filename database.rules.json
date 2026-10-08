@@ -124,7 +124,7 @@
     "songs": {
       ".read": "auth != null",
       "$id": {
-        ".write": "(auth != null && ((root.child('admins').child(auth.uid).val() === true) || (!data.exists() && newData.exists() && newData.child('ownerId').val() === auth.uid && newData.child('roomCode').isString() && root.child('rooms').child(newData.child('roomCode').val()).child('masterId').val() === auth.uid && root.child('rooms').child(newData.child('roomCode').val()).child('expiresAt').val() > now))) && (newData.parent().parent().child('defaultFile').val() !== $id || (newData.exists() && !newData.child('deletedAt').exists()))",
+        ".write": "(auth != null && ((root.child('admins').child(auth.uid).val() === true) || (!data.exists() && newData.exists() && newData.child('ownerId').val() === auth.uid && newData.child('roomCode').isString() && root.child('rooms').child(newData.child('roomCode').val()).child('expiresAt').val() > now && newData.child('createdAt').val() >= root.child('rooms').child(newData.child('roomCode').val()).child('createdAt').val()))) && (newData.parent().parent().child('defaultFile').val() !== $id || (newData.exists() && !newData.child('deletedAt').exists()))",
         ".validate": "$id.matches(/^[a-f0-9]{32}$/) && newData.hasChildren(['id','title','ownerId','createdAt']) && ((newData.hasChild('segments') && !newData.hasChild('pdfUrl')) || (newData.hasChild('pdfUrl') && !newData.hasChild('segments'))) && newData.child('id').val() === $id",
         "id": {
           ".validate": "newData.isString() && newData.val().matches(/^[a-f0-9]{32}$/)"

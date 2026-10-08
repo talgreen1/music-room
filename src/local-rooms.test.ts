@@ -2,6 +2,27 @@ import { describe, expect, it } from 'vitest';
 import { LocalRoomStore } from '../server/local-rooms';
 const descriptor = { masterId: 'creator', pdfUrl: '/songbook.pdf', pdfVersion: 'one', pdfTitle: 'Book' };
 describe('shared local development rooms', () => {
+  it('issues upload-only Follower sessions scoped to the active room', () => {
+    let now = 100000; const store = new LocalRoomStore(() => now);
+    const first = store.create(descriptor), second = store.create(descriptor);
+    const member = store.join(first.code)!;
+    const owner = store.uploader(first.code, member.token);
+    expect(owner).toBeTruthy(); expect(owner).not.toBe(descriptor.masterId);
+    expect(store.uploader(first.code, first.token)).toBe(descriptor.masterId);
+    expect(store.uploader(second.code, member.token)).toBeUndefined();
+    expect(store.uploader(first.code, 'wrong')).toBeUndefined();
+    expect(store.authorized(first.code, member.token)).toBe(false);
+    expect(store.publish(first.code, member.token, { page: 5, offset: .5, zoom: 1 })).toBe('forbidden');
+    expect(store.changeSheet(first.code, member.token)).toBe('forbidden');
+    now += 86400000;
+    expect(store.uploader(first.code, member.token)).toBeUndefined(); expect(store.join(first.code)).toBeNull();
+  });
+  it('invalidates Follower upload sessions when a room is deleted or its code reused', () => {
+    const store = new LocalRoomStore(Date.now, () => '123456'), room = store.create(descriptor);
+    const member = store.join(room.code)!;
+    store.delete(room.code); expect(store.uploader(room.code, member.token)).toBeUndefined();
+    store.create(descriptor); expect(store.uploader(room.code, member.token)).toBeUndefined();
+  });
   it('opens a search result with the matching source and page in one shared update', () => {
     const store = new LocalRoomStore(), created = store.create(descriptor);
     const file = { id: 'c'.repeat(32), title: 'Search book', pdfUrl: '/book.pdf', fileNames: ['original.pdf'] };

@@ -10,7 +10,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { validateFile, isPdfFile, validateJpeg, MAX_IMAGE_BYTES, type SharedFile } from '../src/sheets';
 
 type Listener = (room: Room | null) => void;
-type Entry = { room: Room; token: string; listeners: Set<Listener> };
+type Entry = { room: Room; token: string; members: Map<string, string>; listeners: Set<Listener> };
 export class LocalRoomStore {
   private rooms = new Map<string, Entry>();
   constructor(private now = Date.now, private code = () => String(randomInt(100000, 1000000))) {}
@@ -22,13 +22,23 @@ export class LocalRoomStore {
       const now = this.now();
       const room: Room = { ...descriptor, createdAt: now, expiresAt: now + 86400000, position: { page: 1, offset: 0, zoom: 1, sourceId: descriptor.sheet?.id || 'pdf', sequence: 0, updatedAt: now } };
       const token = randomBytes(32).toString('hex');
-      this.rooms.set(code, { room, token, listeners: new Set() });
+      this.rooms.set(code, { room, token, members: new Map(), listeners: new Set() });
       return { code, room: structuredClone(room), token };
     }
     throw new Error('Could not reserve a room code.');
   }
   read(code: string) { const entry = this.rooms.get(code); return entry && entry.room.expiresAt > this.now() ? structuredClone(entry.room) : null; }
   authorized(code: string, token: string) { const entry = this.rooms.get(code); return Boolean(entry && entry.room.expiresAt > this.now() && token && token === entry.token); }
+  join(code: string) {
+    if (!this.read(code)) return null;
+    const token = randomBytes(32).toString('hex'), ownerId = randomBytes(16).toString('hex');
+    this.rooms.get(code)!.members.set(token, ownerId);
+    return { token };
+  }
+  uploader(code: string, token: string): string | undefined {
+    const room = this.read(code); if (!room || !token) return;
+    return this.authorized(code, token) ? room.masterId : this.rooms.get(code)!.members.get(token);
+  }
   changeSheet(code: string, token: string, value?: SharedFile, location = { page: 1, offset: 0 }): 'ok' | 'missing' | 'forbidden' | 'invalid' {
     if (!this.read(code)) return 'missing';
     if (!this.authorized(code, token)) return 'forbidden';
@@ -141,14 +151,21 @@ export function localRoomsPlugin(env: Record<string, string> = {}): Plugin {
             try { const bytes = await readFile(`.local-data/sheets/${filename}`); res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': bytes.length, 'Cache-Control': 'public,max-age=31536000,immutable', 'X-Content-Type-Options': 'nosniff' }); res.end(bytes); }
             catch { json(res, 404, { error: 'Image not found.' }); } return;
           }
+          const joinRoute = /^\/api\/local-rooms\/(\d{6})\/members$/.exec(url.pathname);
+          if (joinRoute && req.method === 'POST') {
+            const member = store.join(joinRoute[1]);
+            json(res, member ? 201 : 404, member || { error: 'Room unavailable.' }); return;
+          }
           const sheetRoute = /^\/api\/local-rooms\/(\d{6})\/(sheet|images|songs|pdfs)$/.exec(url.pathname);
           if (sheetRoute) {
             const code = sheetRoute[1], token = req.headers.authorization?.replace(/^Bearer /, '') || '';
             if (!store.read(code)) { json(res, 404, { error: 'Room unavailable.' }); return; }
-            if (!store.authorized(code, token)) { json(res, 403, { error: 'Only the Master may share screenshots.' }); return; }
+            const ownerId = store.uploader(code, token);
+            if (!ownerId || (sheetRoute[2] === 'sheet' && !store.authorized(code, token))) { json(res, 403, { error: sheetRoute[2] === 'sheet' ? 'Only the Master may change the shared file.' : 'Join the room before uploading files.' }); return; }
             if (sheetRoute[2] === 'songs' && req.method === 'POST') {
               const song = await localSong(await body(req));
-              const saved = await library.save(song, store.read(code)!.masterId, code); json(res, 201, saved); return;
+              if (store.uploader(code, token) !== ownerId) { json(res, 403, { error: 'Room session expired.' }); return; }
+              const saved = await library.save(song, ownerId, code); json(res, 201, saved); return;
             }
             if (sheetRoute[2] === 'sheet' && req.method === 'PUT') {
               const input = await body(req); if (!Object.hasOwn(input, 'sheet')) throw new Error('Missing sheet.');

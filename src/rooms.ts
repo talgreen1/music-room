@@ -25,6 +25,8 @@ export class RoomService {
   private sourceId = 'pdf';
   private serverOffset = 0;
   private initialized = false;
+  private activeRoom = false;
+  private uploadToken = '';
   private onRoom?: (room: Room | null) => void;
   async init() {
     if (this.initialized) return;
@@ -96,20 +98,22 @@ export class RoomService {
   watch(code: string, onRoom: (room: Room | null) => void, onConnection: (status: Connection) => void, onError: (message: string) => void) {
     this.leave(); this.code = code; this.onRoom = onRoom;
     this.master = sessionStorage.getItem(`music-master:${code}`) === '1';
+    this.uploadToken = sessionStorage.getItem(`music-master-token:${code}`) || '';
     let expiresAt = Infinity;
     const accept = (room: Room | null) => {
       this.sourceId = room?.sheet?.id || 'pdf';
       expiresAt = room?.expiresAt || Infinity;
       this.sequence = Math.max(this.sequence, room?.position.sequence || 0);
       if (room?.masterId !== this.uid) this.master = false;
-      onRoom(room && room.expiresAt > Date.now() + this.serverOffset ? room : null);
+      this.activeRoom = Boolean(room && room.expiresAt > Date.now() + this.serverOffset);
+      onRoom(this.activeRoom ? room : null);
     };
     const offline = () => onConnection('Offline');
     const online = () => onConnection(this.connected ? 'Connected' : 'Reconnecting…');
     window.addEventListener('offline', offline); window.addEventListener('online', online);
     this.cleanups.push(() => { window.removeEventListener('offline', offline); window.removeEventListener('online', online); });
     const expiry = window.setInterval(() => {
-      if (expiresAt <= Date.now() + this.serverOffset) { this.master = false; onRoom(null); }
+      if (expiresAt <= Date.now() + this.serverOffset) { this.master = false; this.activeRoom = false; onRoom(null); }
     }, 10000);
     this.cleanups.push(() => clearInterval(expiry));
     if (this.db) {
@@ -130,7 +134,14 @@ export class RoomService {
           if (!live) return;
           if (response.status === 404) { onRoom(null); return; }
           if (!response.ok) throw new Error('Could not connect to the local room server.');
-          handle(await response.json());
+          const payload = await response.json();
+          if (payload.room?.masterId !== this.uid || !this.uploadToken) {
+            const joined = await fetch(`/api/local-rooms/${code}/members`, { method: 'POST', signal: controller.signal });
+            if (!joined.ok) throw new Error('Could not join the room.');
+            const member = await joined.json(); if (!live) return;
+            this.uploadToken = member.token;
+          }
+          handle(payload);
           if (!live) return;
           events = new EventSource(`/api/local-rooms/${code}/events`);
           events.onopen = () => { if (live) { this.connected = true; onConnection('Connected'); } };
@@ -185,10 +196,10 @@ export class RoomService {
     return availableSongs((await get(ref(this.db, 'songs'))).val() || {});
   }
   async saveSong(sheet: SharedFile) {
-    if (!this.master || !this.code) throw new Error('Only the Master can save songs.');
+    this.requireUploadRoom();
     const value = validateFile(sheet);
     if (localServerConfigured) {
-      const response = await fetch(`/api/local-rooms/${this.code}/songs`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem(`music-master-token:${this.code}`)}` }, body: JSON.stringify(value) });
+      const response = await fetch(`/api/local-rooms/${this.code}/songs`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.uploadToken}` }, body: JSON.stringify(value) });
       if (!response.ok) throw new Error((await response.json()).error || 'Could not save the song.'); return;
     }
     if (!this.db) throw new Error('The song library requires the local server or Firebase.');
@@ -214,15 +225,15 @@ export class RoomService {
     }
   }
   async uploadPdf(file: File, id: string): Promise<string> {
-    if (!this.master || !this.code) throw new Error('Only the Master can upload files.');
+    this.requireUploadRoom();
     const user = this.db ? getAuth(getApps().find(app => app.name === '[DEFAULT]')!).currentUser : null;
-    return uploadLibraryPdf(file, id, user, localServerConfigured ? `/api/local-rooms/${this.code}/pdfs` : undefined, sessionStorage.getItem(`music-master-token:${this.code}`) || undefined);
+    return uploadLibraryPdf(file, id, user, localServerConfigured ? `/api/local-rooms/${this.code}/pdfs` : undefined, this.uploadToken || undefined);
   }
   async uploadSegment(blob: Blob, sheetId: string, index: number) {
-    if (!this.master || !this.code) throw new Error('Only the Master can upload screenshots.');
+    this.requireUploadRoom();
     if (blob.type !== 'image/jpeg' || !blob.size || blob.size > 3 * 1024 * 1024 || !/^[a-f0-9]{32}$/.test(sheetId) || !Number.isInteger(index) || index < 0 || index >= 40) throw new Error('Invalid screenshot segment.');
     if (localServerConfigured) {
-      const response = await fetch(`/api/local-rooms/${this.code}/images`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Authorization: `Bearer ${sessionStorage.getItem(`music-master-token:${this.code}`)}` }, body: blob });
+      const response = await fetch(`/api/local-rooms/${this.code}/images`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Authorization: `Bearer ${this.uploadToken}` }, body: blob });
       const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Screenshot upload failed.'); return result.url as string;
     }
     if (!this.db) throw new Error('Screenshot sharing requires the local server or Firebase.');
@@ -235,5 +246,8 @@ export class RoomService {
     if (!response.ok) throw new Error('Screenshot upload failed. Check the room-sheets bucket and upload policy.');
     return `${url}/storage/v1/object/public/room-sheets/${filename}`;
   }
-  leave() { this.cleanups.forEach(fn => fn()); this.cleanups = []; this.channel?.close(); this.channel = undefined; this.onRoom = undefined; this.master = false; this.connected = false; this.sequence = 0; this.code = ''; }
+  private requireUploadRoom() {
+    if (!this.code || !this.activeRoom || !navigator.onLine) throw new Error('Join an active room before uploading files.');
+  }
+  leave() { this.cleanups.forEach(fn => fn()); this.cleanups = []; this.channel?.close(); this.channel = undefined; this.onRoom = undefined; this.master = false; this.activeRoom = false; this.uploadToken = ''; this.connected = false; this.sequence = 0; this.code = ''; }
 }

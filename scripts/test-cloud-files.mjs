@@ -35,21 +35,27 @@ try {
     throw new Error('Could not reserve test room.');
   }
   const code = await room(), bytes = await readFile('public/songbooks/songbook-2026-10.pdf');
-  for (const [index, user] of [master.user, admin].entries()) {
+  for (const [index, user] of [master.user, admin, follower.user].entries()) {
     const id = randomBytes(16).toString('hex'), path = `${user.uid}/${id}/document.pdf`;
-    const file = { id, title: `${index ? 'Settings' : 'Master'} cloud PDF check`, fileNames: ['Original songbook.pdf'], pdfUrl: `${env.VITE_SUPABASE_URL}/storage/v1/object/public/room-pdfs/${path}` };
+    const file = { id, title: `${['Master', 'Settings', 'Follower'][index]} cloud PDF check`, fileNames: ['Original songbook.pdf'], pdfUrl: `${env.VITE_SUPABASE_URL}/storage/v1/object/public/room-pdfs/${path}` };
     files.push({ file, path });
     const uploaded = await storage(user, `room-pdfs/${path}`, 'POST', bytes);
     assert.ok(uploaded.ok, `PDF upload failed: ${uploaded.status} ${await uploaded.text()}`);
     assert.deepEqual(Buffer.from(await (await fetch(file.pdfUrl)).arrayBuffer()), bytes);
     const overwrite = await storage(user, `room-pdfs/${path}`, 'POST', bytes); assert.ok(!overwrite.ok); await overwrite.arrayBuffer();
-    await set(ref(dbs[index ? 2 : 0], `songs/${id}`), { ...file, ownerId: user.uid, createdAt: serverTimestamp(), ...(index ? {} : { roomCode: code }) });
+    await set(ref(dbs[[0, 2, 1][index]], `songs/${id}`), { ...file, ownerId: user.uid, createdAt: serverTimestamp(), ...(index === 1 ? {} : { roomCode: code }) });
   }
   const first = files[0].file, second = files[1].file;
   assert.deepEqual((await get(ref(dbs[1], `songs/${first.id}`))).val().fileNames, first.fileNames);
   await denied(() => update(ref(dbs[2], `songs/${first.id}`), { fileNames: [''] }));
   await denied(() => update(ref(dbs[2], `songs/${first.id}`), { fileNames: Array(21).fill('file.pdf') }));
   const position = (sourceId, sequence) => ({ sourceId, sequence, page: 37, offset: .6, horizontal: .7, zoom: 2, updatedAt: serverTimestamp() });
+  const followerFile = files[2].file;
+  assert.equal((await get(ref(dbs[0], `rooms/${code}`))).val().position.sourceId, 'pdf', 'Uploads do not change the shared view.');
+  await denied(() => update(ref(dbs[1], `songs/${followerFile.id}`), { title: 'Overwrite' }));
+  await denied(() => remove(ref(dbs[1], `songs/${followerFile.id}`)));
+  await update(ref(dbs[0], `rooms/${code}`), { sheet: followerFile, position: position(followerFile.id, 1) });
+  assert.equal((await get(ref(dbs[1], `rooms/${code}`))).val().sheet.id, followerFile.id);
   await denied(() => set(ref(dbs[0], 'defaultFile'), first.id));
   await denied(() => set(ref(dbs[1], 'defaultFile'), first.id));
   await denied(() => set(ref(dbs[2], 'defaultFile'), 'f'.repeat(32)));
@@ -59,8 +65,8 @@ try {
   await denied(() => update(ref(dbs[2], `songs/${first.id}`), { deletedAt: serverTimestamp() }));
   const defaultRoom = await room(first);
   assert.equal((await get(ref(dbs[1], `rooms/${defaultRoom}`))).val().sheet.pdfUrl, first.pdfUrl);
-  await denied(() => update(ref(dbs[1], `rooms/${code}`), { sheet: second, position: position(second.id, 1) }));
-  await update(ref(dbs[0], `rooms/${code}`), { sheet: second, position: position(second.id, 1) });
+  await denied(() => update(ref(dbs[1], `rooms/${code}`), { sheet: second, position: position(second.id, 2) }));
+  await update(ref(dbs[0], `rooms/${code}`), { sheet: second, position: position(second.id, 2) });
   const joined = (await get(ref(dbs[1], `rooms/${code}`))).val();
   assert.deepEqual(joined.sheet.fileNames, second.fileNames);
   assert.equal(joined.sheet.pdfUrl, second.pdfUrl); assert.equal(joined.position.page, 37); assert.equal(joined.position.horizontal, .7);
@@ -69,8 +75,8 @@ try {
   const unauthorized = { ...second, id: randomBytes(16).toString('hex'), ownerId: follower.user.uid, roomCode: code, createdAt: serverTimestamp() };
   await denied(() => set(ref(dbs[1], `songs/${unauthorized.id}`), unauthorized));
   await update(ref(dbs[2], `songs/${second.id}`), { deletedAt: serverTimestamp() });
-  await denied(() => update(ref(dbs[0], `rooms/${defaultRoom}`), { sheet: second, position: position(second.id, 1) }));
-  await set(ref(dbs[0], `rooms/${code}/position`), position(second.id, 2));
+  await denied(() => update(ref(dbs[0], `rooms/${defaultRoom}`), { sheet: second, position: position(second.id, 2) }));
+  await set(ref(dbs[0], `rooms/${code}/position`), position(second.id, 3));
   const foreignUpload = await storage(follower.user, `room-pdfs/${files[0].path}`, 'POST', bytes); assert.ok(!foreignUpload.ok); await foreignUpload.arrayBuffer();
   const deletion = await storage(follower.user, 'room-pdfs', 'DELETE', JSON.stringify({ prefixes: [files[1].path] }), 'application/json'); await deletion.arrayBuffer();
   assert.deepEqual(Buffer.from(await (await fetch(second.pdfUrl)).arrayBuffer()), bytes, 'Followers cannot delete PDF bytes.');
@@ -83,7 +89,7 @@ try {
   assert.equal((await get(ref(dbs[2], `rooms/${code}`))).exists(), false);
   assert.ok((await get(ref(dbs[2], `songs/${second.id}/deletedAt`))).exists());
   console.log('PASS: keep-files room removal, atomic room/file tombstoning and protected-default/unauthorized rejection.');
-  console.log('PASS: Master/Settings PDF uploads and exact downloads, immutability, owned paths, PDF room creation/switching and position sync, denied Followers/default/deletion, current-default protection and deleted-source rejection.');
+  console.log('PASS: Master/Settings/Follower PDF uploads and exact downloads, immutable owned paths, Master selection of Follower files, denied Follower shared-state/default/deletion writes, current-default protection and deleted-source rejection.');
 } catch (error) { failed = true; console.error(error); }
 finally {
   clearTimeout(deadline);
