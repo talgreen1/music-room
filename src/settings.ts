@@ -73,6 +73,24 @@ export function showSettings(app: HTMLElement, back: () => void) {
         try { await service.setDefault(song.id); await refreshSongs(); report('Default updated for new rooms.'); } catch (error) { fail(error); await refreshSongs().catch(() => {}); }
       };
       row.append(name, view, makeDefault);
+      if (song.id === 'pdf') {
+        const replace = document.createElement('button'); replace.className = 'secondary'; replace.textContent = 'Replace original PDF';
+        replace.onclick = () => {
+          closePreview?.();
+          closePreview = showSheetDialog({
+            uploadPdf: (file, id) => service.uploadPdf(file, id),
+            uploadSegment: async () => { throw new Error('Choose a PDF file.'); },
+            saveSong: async file => {
+              if (!isPdfFile(file)) throw new Error('Choose a PDF file.');
+              await service.updatePdf({ pdfUrl: file.pdfUrl, pdfTitle: file.title, pdfVersion: file.id });
+            }
+          }, undefined, { libraryOnly: true, replaceOriginalPdf: true, onSaved: async () => {
+            if (!alive) return;
+            await refreshSongs().catch(fail); report('Original PDF updated. Existing rooms keep their current file; the selected default is unchanged.');
+          } });
+        };
+        row.append(replace);
+      }
       if (song.id !== 'pdf') {
         const remove = document.createElement('button'); remove.className = 'danger'; remove.textContent = 'Delete'; remove.setAttribute('aria-label', `Delete file ${song.title}`);
         remove.disabled = song.id === defaultId; if (remove.disabled) remove.title = 'Choose another default before deleting this file.';

@@ -34,9 +34,17 @@ let connection: Connection = 'Reconnecting…';
 let lastPublished = '';
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) => app.querySelector<T>(selector)!;
 const safe = (value: string) => value.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
-const message = (value: string) => { const element = app.querySelector<HTMLElement>('#notice'); if (element) { element.textContent = value; element.hidden = !value; } };
+let noticeTimer: number | undefined;
+const message = (value: string, duration = 0) => {
+  window.clearTimeout(noticeTimer); noticeTimer = undefined;
+  const element = app.querySelector<HTMLElement>('#notice');
+  if (element) {
+    element.textContent = value; element.hidden = !value;
+    if (value && duration) noticeTimer = window.setTimeout(() => { element.textContent = ''; element.hidden = true; noticeTimer = undefined; }, duration);
+  }
+};
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong. Please try again.';
-function cleanup() { generation++; closeMenu?.(); closeMenu = undefined; closeSheet?.(); closeSheet = undefined; closeSettings?.(); closeSettings = undefined; followerSync?.destroy(); followerSync = undefined; publisher?.stop(); publisher = undefined; scrollbar?.destroy(); scrollbar = undefined; viewer?.destroy(); viewer = undefined; service.leave(); room = undefined; ready = false; lastSequence = -1; lastPublished = ''; }
+function cleanup() { generation++; window.clearTimeout(noticeTimer); noticeTimer = undefined; closeMenu?.(); closeMenu = undefined; closeSheet?.(); closeSheet = undefined; closeSettings?.(); closeSettings = undefined; followerSync?.destroy(); followerSync = undefined; publisher?.stop(); publisher = undefined; scrollbar?.destroy(); scrollbar = undefined; viewer?.destroy(); viewer = undefined; service.leave(); room = undefined; ready = false; lastSequence = -1; lastPublished = ''; }
 
 function home() {
   cleanup();
@@ -85,7 +93,6 @@ async function openRoom(code: string) {
   });
   const openSettings = () => { dismissMenu(); closeSettings?.(); closeSettings = showSettingsDialog(); };
   settingsButton.onclick = () => {
-    if (!master) { openSettings(); return; }
     menu.showModal(); settingsButton.setAttribute('aria-expanded', 'true');
   };
   $('#share').onclick = async () => {
@@ -139,7 +146,7 @@ async function openRoom(code: string) {
   const publishPosition = (position: import('./model').Position, immediate = false) => publisher?.push({ ...position, sourceId: loadedSource }, immediate);
   const screenshots = document.createElement('button'); screenshots.className = 'secondary'; screenshots.textContent = 'Add file/song';
   const songsButton = document.createElement('button'); songsButton.className = 'secondary'; songsButton.textContent = 'Select file/song';
-  songsButton.onclick = () => { dismissMenu(); closeSheet?.(); closeSheet = showSongLibrary(service, room?.pdfTitle || 'Songbook'); };
+  songsButton.onclick = () => { dismissMenu(); closeSheet?.(); closeSheet = showSongLibrary(service, room?.pdfTitle || 'Songbook', { viewOnly: !master, original: originalFile() }); };
   const menuSettings = document.createElement('button'); menuSettings.className = 'secondary'; menuSettings.textContent = 'Settings'; menuSettings.onclick = openSettings;
   const originalFile = () => ({ id: 'pdf', title: room!.pdfTitle, pdfUrl: room!.pdfUrl });
   const openSearch = () => {
@@ -166,7 +173,10 @@ async function openRoom(code: string) {
   menuActions.append(screenshots, songsButton, menuSettings, orientation);
   const pdfButton = document.createElement('button'); pdfButton.className = 'secondary source-button'; pdfButton.textContent = 'PDF';
   $('.toolbar').append(pdfButton);
-  screenshots.onclick = () => { dismissMenu(); closeSheet?.(); closeSheet = showSheetDialog(service); };
+  screenshots.onclick = () => {
+    dismissMenu(); closeSheet?.();
+    closeSheet = showSheetDialog(service, undefined, { libraryOnly: !master, roomContribution: !master, onSaved: () => { if (token === generation && !master) message('File added. Everyone in the room can find it in the library; the Master can select it.', 5000); } });
+  };
   pdfButton.onclick = async () => { pdfButton.disabled = true; try { await service.changeSheet(); } catch (error) { message(errorText(error)); } finally { if (token === generation) updateFollow(); } };
   publisher = new PositionPublisher(position => service.publish(position), error => message(errorText(error)));
   viewer.onPage = page => { $<HTMLInputElement>('#page').value = String(page); followerPage.textContent = room?.sheet && !isPdfFile(room.sheet) ? room.sheet.title : `Page ${page} / ${viewer?.count || '…'}`; };
@@ -189,11 +199,9 @@ async function openRoom(code: string) {
     if (scrollbar) scrollbar.element.hidden = !master;
     scrollbar?.setEnabled(ready && master);
     orientation.hidden = !master;
-    settingsButton.textContent = master ? '☰' : '⚙';
-    settingsButton.setAttribute('aria-label', master ? 'Room menu' : 'Settings');
-    settingsButton.title = master ? 'Room menu' : 'Settings';
-    if (master) { settingsButton.setAttribute('aria-haspopup', 'dialog'); settingsButton.setAttribute('aria-controls', menu.id); settingsButton.setAttribute('aria-expanded', String(menu.open)); }
-    else { dismissMenu(); settingsButton.removeAttribute('aria-haspopup'); settingsButton.removeAttribute('aria-controls'); settingsButton.removeAttribute('aria-expanded'); }
+    settingsButton.textContent = '☰';
+    settingsButton.setAttribute('aria-label', 'Room menu'); settingsButton.title = 'Room menu';
+    settingsButton.setAttribute('aria-haspopup', 'dialog'); settingsButton.setAttribute('aria-controls', menu.id); settingsButton.setAttribute('aria-expanded', String(menu.open));
     rtl.disabled = !ready; searchButton.disabled = !ready;
     syncControl.hidden = master; syncCheckbox.disabled = !ready;
     $('#share').hidden = !master;
@@ -205,8 +213,8 @@ async function openRoom(code: string) {
     $('#zoom').hidden = master;
     $('#page-form').hidden = !master || Boolean(room?.sheet && !isPdfFile(room.sheet));
     for (const selector of ['#previous', '#next']) $(selector).hidden = !master || Boolean(room?.sheet && !isPdfFile(room.sheet));
-    songsButton.hidden = !master; songsButton.disabled = !ready || connection !== 'Connected';
-    screenshots.hidden = !master; screenshots.disabled = !ready || connection !== 'Connected';
+    songsButton.hidden = false; songsButton.textContent = master ? 'Select file/song' : 'View files/songs'; songsButton.disabled = !ready || connection !== 'Connected';
+    screenshots.hidden = false; screenshots.disabled = !ready || connection !== 'Connected';
     pdfButton.hidden = !master || !room?.sheet; pdfButton.disabled = !ready || connection !== 'Connected';
     $('#follower-page').hidden = master;
   }

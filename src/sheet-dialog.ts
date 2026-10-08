@@ -7,7 +7,7 @@ export interface ScreenshotDestination {
   saveSong(song: SharedFile): Promise<void>;
   changeSheet?(song: SharedFile): Promise<void>;
 }
-export interface SheetDialogOptions { libraryOnly?: boolean; onSaved?: () => void | Promise<void> }
+export interface SheetDialogOptions { libraryOnly?: boolean; roomContribution?: boolean; replaceOriginalPdf?: boolean; onSaved?: () => void | Promise<void> }
 
 /** All stitching stays on this device; publish only after every segment uploads. */
 export function showSheetDialog(service: ScreenshotDestination, initialFiles?: File[], options: SheetDialogOptions = {}): () => void {
@@ -19,11 +19,23 @@ export function showSheetDialog(service: ScreenshotDestination, initialFiles?: F
   const inputs = dialog.querySelectorAll<HTMLInputElement>('input[type=file]');
   const auto = get<HTMLButtonElement>('.auto-stitch'), preview = get<HTMLButtonElement>('.preview-sheet'), publish = get<HTMLButtonElement>('.publish-sheet');
   if (options.libraryOnly) { publish.textContent = 'Save to library'; }
+  if (options.replaceOriginalPdf) {
+    get('h2').textContent = 'Replace original PDF';
+    get('h2').nextElementSibling!.textContent = 'Upload an updated songbook PDF. Existing rooms keep their current file. Your selected default stays unchanged; use Make default to choose this PDF for new rooms.';
+    get<HTMLInputElement>('.screenshots-picker').closest('label')!.remove();
+    auto.hidden = preview.hidden = true;
+    publish.textContent = 'Replace original PDF';
+  }
+  if (options.roomContribution) {
+    publish.textContent = 'Add to room library';
+    const hint = document.createElement('p'); hint.textContent = 'Everyone can view this file in the library. The Master chooses what is displayed for the room.';
+    get('.sheet-actions').before(hint);
+  }
   let pdf: File | undefined;
   let captures: Capture[] = [], segments: PreparedSegment[] = [], urls: string[] = [], busy = false, closed = false;
   const progress = (text: string) => { if (!closed) status.textContent = text; };
   const clearPreview = () => { urls.forEach(URL.revokeObjectURL); urls = []; segments = []; get('.sheet-preview').replaceChildren(); publish.disabled = true; };
-  const controls = () => { dialog.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input,button').forEach(element => element.disabled = busy); auto.hidden = preview.hidden = Boolean(pdf); auto.disabled = busy || !captures.length; preview.disabled = busy || !captures.length; publish.disabled = busy || (!segments.length && !pdf); };
+  const controls = () => { dialog.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input,button').forEach(element => element.disabled = busy); auto.hidden = preview.hidden = Boolean(pdf) || Boolean(options.replaceOriginalPdf); auto.disabled = busy || !captures.length; preview.disabled = busy || !captures.length; publish.disabled = busy || (!segments.length && !pdf); };
   const close = () => { if (closed) return; closed = true; clearPreview(); dialog.close(); dialog.remove(); captures = []; };
   get<HTMLButtonElement>('.dialog-close').onclick = close;
   dialog.addEventListener('cancel', event => { if (busy) event.preventDefault(); });
@@ -69,6 +81,7 @@ export function showSheetDialog(service: ScreenshotDestination, initialFiles?: F
       pdf = file; get('.sheet-preview').classList.add('pdf-upload-preview'); get('.sheet-preview').textContent = `${file.name} | ${(file.size / 1024 / 1024).toFixed(1)} MB`;
       progress('PDF ready. Enter an optional name, then save.'); return;
     }
+    if (options.replaceOriginalPdf) throw new Error('Choose one PDF file.');
     captures = await inspectCaptures(files, progress); await autoStitch(captures, progress);
     if (closed) return; renderList(); await makePreview();
   });
@@ -91,6 +104,7 @@ export function showSheetDialog(service: ScreenshotDestination, initialFiles?: F
       if (closed) return;
       song = { id, title, fileNames: captures.map(capture => capture.name), segments: uploaded };
     }
+    if (closed) return;
     progress('Saving song...'); await service.saveSong(song);
     if (!options.libraryOnly && service.changeSheet) {
       try { await service.changeSheet(song); } catch (error) { progress(`Song saved to the library, but could not open it in this room: ${error instanceof Error ? error.message : 'Please reconnect.'}`); return; }

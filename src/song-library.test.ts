@@ -10,10 +10,11 @@ afterEach(async () => { for (const folder of folders.splice(0)) { if (!resolve(f
 const sheet = { id: 'a'.repeat(32), title: 'My song', segments: [{ url: `/api/sheets/${'b'.repeat(32)}.jpg`, width: 480, height: 800 }] };
 async function fixture() { const folder = await mkdtemp(join(tmpdir(), 'music-room-library-')); folders.push(folder); await mkdir(join(folder, 'sheets')); await writeFile(join(folder, 'sheets', `${'b'.repeat(32)}.jpg`), 'fixture'); return folder; }
 describe('persistent saved songs', () => {
-  it('identifies uploads by origin, uploader and room lifetime, excluding reused room codes', () => {
+  it('includes Master and Follower uploads by origin and room lifetime, excluding reused room codes', () => {
     const room: Room = { masterId: 'creator', createdAt: 1000, expiresAt: 2000, pdfUrl: '/book.pdf', pdfTitle: 'Book', pdfVersion: 'v1', position: { page: 1, offset: 0, zoom: 1, updatedAt: 1000 } };
     const song = { ...sheet, ownerId: 'creator', roomCode: '123456', createdAt: 1500 };
-    expect(roomUploads([song, { ...song, createdAt: 900 }, { ...song, ownerId: 'other' }, { ...song, roomCode: undefined }, { ...song, deletedAt: 1600 }, { ...song, createdAt: 2100 }], { '123456': room })).toEqual([song]);
+    const followerSong = { ...song, ownerId: 'follower' };
+    expect(roomUploads([song, { ...song, createdAt: 900 }, followerSong, { ...song, roomCode: undefined }, { ...song, deletedAt: 1600 }, { ...song, createdAt: 2100 }], { '123456': room })).toEqual([song, followerSong]);
     expect(roomUploads([song], { '654321': { ...room, sheet } })).toEqual([]);
   });
   it('bulk room-file deletion preserves the default, unrelated uploads and active file bytes', async () => {
