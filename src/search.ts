@@ -21,8 +21,10 @@ export function nameResult(file: SharedFile, query: string): SearchResult[] {
     ? [{ file, location: { page: 1, offset: 0 }, snippet: names.join(', ') || file.title, kind: 'name' }] : [];
 }
 export function textResults(file: SharedFile, blocks: SearchBlock[], query: string): SearchResult[] {
-  const results = blocks.filter(block => matchesSearch(block.text, query)).map(block => ({ file, location: block.target || { page: block.page, offset: block.offset }, snippet: block.text, kind: 'text' as const, foundPage: block.page }));
-  // Repeated index links to the same song/text produce one useful result.
+  const matches = blocks.filter(block => matchesSearch(block.text, query));
+  const matchingPages = new Set(matches.filter(block => !block.target).map(block => block.page));
+  // Prefer matching song-page text over index links that open that same page.
+  const results = matches.filter(block => !block.target || !matchingPages.has(block.target.page)).map(block => ({ file, location: block.target || { page: block.page, offset: block.offset }, snippet: block.text, kind: 'text' as const, foundPage: block.page }));
   const seen = new Set<string>();
-  return results.filter(result => { const key = `${result.location.page}:${result.location.offset.toFixed(3)}:${normalizeSearch(result.snippet)}`; if (seen.has(key)) return false; seen.add(key); return true; });
+  return results.filter(result => { const key = `${result.location.page}:${result.location.offset.toFixed(3)}:${result.foundPage === result.location.page ? normalizeSearch(result.snippet) : 'index'}`; if (seen.has(key)) return false; seen.add(key); return true; });
 }

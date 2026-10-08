@@ -33,11 +33,26 @@ describe('song search', () => {
     const item = (str: string, x: number, width: number) => ({ str, transform: [10, 0, 0, 10, x, 20], width, height: 10, hasEOL: false });
     expect(joinTextItems([item('Hel', 0, 15), item('lo', 15, 10), item('world', 30, 25)])).toBe('Hello world');
   });
+  it('prefers song-page matches over index links while retaining index-only destinations', () => {
+    const blocks = [
+      { page: 1, offset: 0, text: 'Song - Artist', target: { page: 27, offset: 0 } },
+      { page: 27, offset: .08, text: 'Artist - Song' },
+      { page: 2, offset: 0, text: 'Another Song', target: { page: 65, offset: 0 } },
+      { page: 3, offset: 0, text: 'Song by another artist', target: { page: 65, offset: 0 } },
+      { page: 27, offset: .6, text: 'Song in a later verse' }
+    ];
+    const hits = textResults(file, blocks, 'song');
+    expect(hits).toHaveLength(3);
+    expect(hits.filter(hit => hit.location.page === 27).every(hit => hit.foundPage === 27)).toBe(true);
+    expect(hits.filter(hit => hit.location.page === 65)).toHaveLength(1);
+  });
   it('finds the supplied book index text and follows its internal song destination', async () => {
     GlobalWorkerOptions.workerSrc = pathToFileURL(resolve('node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs')).href;
     const pdf = await getDocument({ data: new Uint8Array(await readFile('public/songbooks/songbook-2026-10.pdf')) }).promise;
     try {
       const blocks = await extractPdfSearch(pdf, new AbortController().signal, () => {});
+      const repeatedSong = textResults(file, blocks, '\u05d4\u05dc\u05d5\u05d5\u05d0\u05d9');
+      expect(repeatedSong.map(hit => hit.location.page)).toEqual([27]);
       const hits = textResults(file, blocks, 'אדון עולם');
       expect(hits.length).toBeGreaterThan(0); expect(hits.some(hit => hit.location.page > 4 && hit.foundPage! <= 4)).toBe(true);
       const cancelled = new AbortController(); cancelled.abort();
