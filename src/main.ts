@@ -54,6 +54,8 @@ function home() {
     <footer><span class="book-dot"></span><span>${safe(songbook.pdfTitle)} · ${safe(songbook.pdfVersion)}</span></footer>
     ${localServerConfigured ? '<aside class="demo-note"><strong>Local development</strong><br>Rooms are shared by this server. Join from another browser, or use your computer’s network address from a phone on the same Wi-Fi. Rooms reset when the server restarts.</aside>' : !cloudConfigured ? '<aside class="demo-note"><strong>Browser-only demo</strong><br>Open a second tab in this browser to try following. Set up Firebase to connect separate browsers or phones.</aside>' : '<p class="privacy">No account needed. Just bring your instrument.</p>'}</main>`;
   const settingsButton = document.createElement('button'); settingsButton.className = 'secondary'; settingsButton.textContent = 'Settings'; settingsButton.id = 'settings'; $('.brand').append(settingsButton);
+  const explainerLink = document.createElement('a'); explainerLink.className = 'explainer-link'; explainerLink.href = '/explainer/index.html'; explainerLink.dir = 'rtl'; explainerLink.lang = 'he'; explainerLink.textContent = 'איך זה עובד? צפו בסרטון קצר';
+  $('.entry-card').after(explainerLink);
   settingsButton.onclick = () => { history.pushState({}, '', '?settings=1'); route(); };
   $('#create').onclick = async () => {
     const button = $<HTMLButtonElement>('#create'); button.disabled = true; button.textContent = 'Creating room…'; message('');
