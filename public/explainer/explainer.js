@@ -4,10 +4,10 @@ import { createSoundtrack, SOUNDTRACK_BPM } from './soundtrack.js';
 const canvas = document.querySelector('#film');
 const ctx = canvas.getContext('2d');
 const play = document.querySelector('#play');
-const restart = document.querySelector('#restart');
+const stop = document.querySelector('#stop');
 const timeline = document.querySelector('#timeline');
 const timeLabel = document.querySelector('#time');
-const download = document.querySelector('#download');
+const volume = document.querySelector('#volume');
 const status = document.querySelector('#status');
 const sound = document.querySelector('#sound');
 const goHome = document.querySelector('#go-home');
@@ -258,91 +258,58 @@ function render(t) {
 let position = 0;
 let playing = !matchMedia('(prefers-reduced-motion: reduce)').matches;
 let previous;
-let exporting = false;
-let audioContext, soundtrackPromise, previewSource;
-let musicEnabled = false;
+let audioContext, soundtrackPromise, previewSource, previewGain;
+let muted = true;
+let audioRevision = 0;
 async function prepareAudio() {
   audioContext ??= new AudioContext();
   await audioContext.resume();
   soundtrackPromise ??= createSoundtrack(DURATION);
   return soundtrackPromise;
 }
-function stopPreviewMusic() { previewSource?.stop(); previewSource = undefined; }
+function stopPreviewMusic() {
+  audioRevision++;
+  previewSource?.stop(); previewSource?.disconnect(); previewSource = undefined;
+  previewGain?.disconnect(); previewGain = undefined;
+}
+function updateVolume() {
+  if (previewGain) previewGain.gain.setValueAtTime(muted ? 0 : Number(volume.value), audioContext.currentTime);
+}
 async function syncPreviewMusic() {
   stopPreviewMusic();
-  if (!musicEnabled || !playing || exporting || position >= DURATION) return;
+  if (muted || !playing || position >= DURATION) return;
+  const revision = audioRevision;
   try {
     const buffer = await prepareAudio();
-    if (!musicEnabled || !playing || exporting || position >= DURATION) return;
-    stopPreviewMusic();
+    if (revision !== audioRevision || muted || !playing || position >= DURATION) return;
     previewSource = audioContext.createBufferSource(); previewSource.buffer = buffer;
-    previewSource.connect(audioContext.destination); previewSource.start(0, position);
-  } catch { musicEnabled = false; sound.textContent = 'הפעלת מוזיקה ♫'; status.textContent = 'לא ניתן לנגן מוזיקה בדפדפן הזה.'; }
+    previewGain = audioContext.createGain(); updateVolume();
+    previewSource.connect(previewGain); previewGain.connect(audioContext.destination); previewSource.start(0, position);
+  } catch { status.textContent = 'לא ניתן לנגן מוזיקה בדפדפן הזה.'; }
 }
 function ui() {
-  goHome.hidden = position < DURATION || exporting;
+  goHome.hidden = position < DURATION;
   timeline.value = String(position);
   timeLabel.textContent = `0:${String(Math.floor(position)).padStart(2, '0')} / 0:${DURATION}`;
-  play.textContent = playing ? 'השהיה' : 'ניגון ▶';
+  play.textContent = playing ? '❚❚' : '▶';
+  play.setAttribute('aria-label', playing ? 'השהיה' : 'ניגון');
+  sound.textContent = muted ? '🔇' : '🔊';
+  sound.setAttribute('aria-label', muted ? 'ביטול השתקה' : 'השתקה');
+  sound.setAttribute('aria-pressed', String(muted));
 }
 function tick(now) {
   if (previous !== undefined && playing) position = Math.min(DURATION, position + (now - previous) / 1000);
   previous = now;
-  if (position === DURATION) { playing = false; stopPreviewMusic(); }
+  if (position === DURATION) { playing = false; if (previewSource) stopPreviewMusic(); }
   render(position); ui(); requestAnimationFrame(tick);
 }
-play.onclick = () => { if (position === DURATION) position = 0; playing = !playing; syncPreviewMusic(); };
-restart.onclick = () => { position = 0; playing = true; previous = undefined; syncPreviewMusic(); };
-timeline.oninput = () => { position = Number(timeline.value); previous = undefined; syncPreviewMusic(); };
-sound.onclick = async () => {
-  musicEnabled = !musicEnabled;
-  sound.textContent = musicEnabled ? 'השתקת מוזיקה ♫' : 'הפעלת מוזיקה ♫';
-  if (musicEnabled) { position = 0; playing = true; previous = undefined; }
-  await syncPreviewMusic();
+play.onclick = () => {
+  if (position === DURATION) position = 0;
+  playing = !playing; previous = undefined; status.textContent = ''; void syncPreviewMusic(); ui();
 };
-document.addEventListener('visibilitychange', () => { if (document.hidden && !exporting) { playing = false; stopPreviewMusic(); } previous = undefined; });
-download.onclick = async () => {
-  if (!canvas.captureStream || !window.MediaRecorder) { status.textContent = 'הדפדפן אינו תומך בייצוא וידאו. אפשר לפתוח את הקישור ב־Chrome או Edge במחשב.'; return; }
-  const mime = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'].find(type => MediaRecorder.isTypeSupported(type));
-  if (!mime) { status.textContent = 'אין פורמט ייצוא נתמך בדפדפן הזה.'; return; }
-  exporting = true; [play, restart, timeline, download, sound].forEach(el => el.disabled = true);
-  const savedPosition = position, savedPlaying = playing;
-  let stream, recorder, timer, visibilityAbort, musicSource, audioDestination;
-  try {
-    stopPreviewMusic(); playing = false;
-    status.textContent = 'מכין את מוזיקת הרקע…';
-    const buffer = await prepareAudio();
-    position = 0; playing = false; render(0);
-    stream = canvas.captureStream(30);
-    audioDestination = audioContext.createMediaStreamDestination();
-    audioDestination.stream.getAudioTracks().forEach(track => stream.addTrack(track));
-    musicSource = audioContext.createBufferSource(); musicSource.buffer = buffer;
-    musicSource.connect(audioDestination); musicSource.connect(audioContext.destination);
-    const chunks = [];
-    recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 5_000_000 });
-    const blob = await new Promise((resolve, reject) => {
-      recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
-      recorder.onerror = () => reject(new Error('Recording failed'));
-      recorder.onstop = () => resolve(new Blob(chunks, { type: mime }));
-      visibilityAbort = () => { if (document.hidden) { recorder.stop(); reject(new Error('Hidden tab')); } };
-      document.addEventListener('visibilitychange', visibilityAbort);
-      recorder.start(); musicSource.start(); previous = undefined; playing = true;
-      status.textContent = `מייצא וידאו עם מוזיקה… יש להשאיר את הלשונית פעילה למשך ${DURATION} שניות.`;
-      timer = setInterval(() => { if (position >= DURATION && recorder.state === 'recording') recorder.stop(); }, 100);
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = `music-room-hebrew-vertical.${mime.includes('mp4') ? 'mp4' : 'webm'}`;
-    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    status.textContent = 'הווידאו מוכן. ההורדה התחילה.';
-  } catch {
-    status.textContent = 'הייצוא הופסק. יש להשאיר את הלשונית פעילה ולנסות שוב.';
-  } finally {
-    clearInterval(timer); if (visibilityAbort) document.removeEventListener('visibilitychange', visibilityAbort);
-    musicSource?.stop(); musicSource?.disconnect(); audioDestination?.disconnect();
-    if (recorder?.state === 'recording') recorder.stop(); stream?.getTracks().forEach(track => track.stop());
-    exporting = false; position = savedPosition; playing = savedPlaying; previous = undefined;
-    [play, restart, timeline, download, sound].forEach(el => el.disabled = false);
-    syncPreviewMusic();
-  }
-};
+stop.onclick = () => { position = 0; playing = false; previous = undefined; stopPreviewMusic(); ui(); };
+timeline.oninput = () => { position = Number(timeline.value); previous = undefined; void syncPreviewMusic(); };
+sound.onclick = () => { muted = !muted; updateVolume(); if (!muted && playing && !previewSource) void syncPreviewMusic(); ui(); };
+volume.oninput = () => { updateVolume(); if (playing && !muted && !previewSource) void syncPreviewMusic(); };
+document.addEventListener('visibilitychange', () => { if (document.hidden) { playing = false; stopPreviewMusic(); } previous = undefined; });
 requestAnimationFrame(tick);

@@ -21,8 +21,9 @@
     button:focus-visible, input:focus-visible { outline: 3px solid #b6e491; outline-offset: 4px; }
     input { flex: 1; min-width: 110px; accent-color: #b6e491; direction: ltr; }
     output { direction: ltr; font-variant-numeric: tabular-nums; }
+    #volume { flex: 0 1 100px; min-width: 75px; } .back-link { display: block; padding: 14px; text-align: center; color: #b6e491; text-underline-offset: 4px; } .controls button { padding: 8px 12px; min-width: 44px; } .controls { direction: ltr; } #status:not(:empty) { display: block; }
     .note { color: #a9bcb0; font-size: 14px; line-height: 1.6; }
-    #status { min-height: 24px; }
+    #status:empty { display: none; }
     details { margin-top: 24px; color: #a9bcb0; line-height: 1.8; }
     @media (max-width: 600px) { body { padding: 12px; } canvas { border-radius: 12px; } h1 { font-size: 17px; } .controls { gap: 8px; } }
   </style>
@@ -33,24 +34,16 @@
       <canvas id="film" width="720" height="1280" role="img" aria-label="סרטון המחשה: לפני Music Room כל נגן מחפש וגולל לבד. יוצרים חדר, משתפים קוד או קישור, בוחרים שיר, וכולם רואים את הגלילה והזום של המוביל."></canvas>
       <a id="go-home" class="home-button" href="/" hidden>להתחלה - לחץ כאן</a>
     </div>
-    <h1 style="margin-top:18px">Music Room · סרטון הסבר</h1>
     <div class="controls" aria-label="שליטה בסרטון">
-      <button id="play" class="primary">השהיה</button>
-      <button id="restart">מההתחלה ↻</button>
-      <button id="sound">הפעלת מוזיקה ♫</button>
+      <button id="play" class="primary" aria-label="ניגון">▶</button>
+      <button id="stop" aria-label="עצירה">■</button>
       <input id="timeline" type="range" min="0" max="42" step="0.1" value="0" aria-label="מיקום בסרטון">
       <output id="time">0:00 / 0:42</output>
-      <button id="download">הורדת וידאו ↓</button>
+      <button id="sound" aria-label="השתקה" aria-pressed="false">🔊</button>
+      <input id="volume" type="range" min="0" max="1" step="0.05" value="0.7" aria-label="עוצמת קול">
     </div>
-    <p id="status" class="note" role="status"></p>
-    <p class="note">42 שניות · פורמט אנכי · מוזיקת רקע מקורית. יש ללחוץ על הפעלת מוזיקה כדי לשמוע בתצוגה המקדימה. ההורדה כוללת מוזיקה ונמשכת כ־42 שניות; יש להשאיר את הלשונית פעילה. לייצוא מומלץ Chrome או Edge במחשב.</p>
-    <details><summary>תוכן הסרטון</summary>
-      <p>בלי חדר משותף: כל אחד מחפש את השיר וגולל בעצמו. אחד כבר בפזמון, השני עדיין בבית הראשון.</p>
-      <p>עם Music Room: המוביל יוצר חדר ומשתף קוד או קישור. שאר הנגנים מצטרפים מהדפדפן, בלי התקנה ובלי חשבון.</p>
-      <p>בוחרים קובץ מהספרייה או מעלים PDF או צילומי מסך. הקבצים נשמרים לשימוש גם בחדרים הבאים.</p>
-      <p>המוביל גולל, מזיז ומגדיל את התצוגה, ושאר הנגנים עוקבים אחריו. אפשר לעיין לבד ולחזור לסנכרון.</p>
-      <p>פחות חיפושים וגלילות. יותר זמן לנגן יחד.</p>
-    </details>
+    <p id="status" role="status"></p>
+    <a class="back-link" href="/">חזרה לעמוד הבית</a>
   </main>
   <script type="module" src="./explainer.js"></script>
 </body>

@@ -26,24 +26,19 @@ secondary explanatory lines. Phone UI labels remain
 inside the phones. In the sync scene, the short illustrative delay makes the
 leader-to-Followers direction visible; it is not a measured network latency.
 
-Click **הפעלת מוזיקה** to preview with music; browser autoplay restrictions require
-a user gesture. The original instrumental soundtrack is synthesized by
-`soundtrack.js` using Web Audio, without licensed songs, samples or network calls.
-It runs at 140 BPM with bright plucks, rhythmic bass, a steady kick, claps and
-sixteenth-note shakers. Animation pulses use the same tempo constant.
-Playback controls support pause, restart and seeking; reduced-motion preferences
-start playback paused.
-When playback finishes, a **להתחלה - לחץ כאן** link button appears centered inside
-the animation, beneath the closing caption, and opens `/` on the current site.
-Replaying hides it until the film ends again.
+The player autoplays muted, except when reduced motion is requested. Tap Unmute
+to enable the soundtrack without restarting. Play/Pause toggles playback; Stop pauses and resets to
+zero. The timeline seeks without changing the playback mode. Volume and mute
+control a Web Audio gain node without resetting the animation. Press Play to
+control playback; browser audio requires a user gesture.
+The soundtrack runs at 140 BPM and is synthesized locally by `soundtrack.js`.
 
-Click **הורדת וידאו** to record the complete animation **with music**, even if preview
-music is muted. Keep the tab foregrounded for the recording. Chrome/Edge export
-WebM (VP9/VP8 + Opus); MP4 is a fallback where the browser supports it. Moving to
-another tab cancels the export to avoid missing animation frames. No microphone,
-camera, screen-capture permission, paid service or cloud rendering is required.
+A permanent Back to home link opens `/`. The existing closing-scene home button
+still appears when playback ends. The home page links to this animation. Extra
+explanatory text and video-export controls have been removed from the player.
 
-Edit scene times/copy/artwork in `explainer.js`; adjust `DURATION`, the HTML timeline,
-time labels and notes together if changing the film length. The files in this
-directory are copied unchanged by Vite builds. Deployment URL:
-`https://talgreen-music-room.web.app/explainer/index.html` (after deployment).
+Edit scene times/copy/artwork in `explainer.js`. Keep `DURATION` and the HTML
+timeline/time label in sync when changing length. Vite copies this directory
+unchanged during builds.
+
+Deployment URL: https://talgreen-music-room.web.app/explainer/index.html
