@@ -2,57 +2,90 @@
 
 A mobile browser songbook: one Master controls the reading position and Followers follow or browse independently. Share the supplied 145-page PDF, any uploaded PDF, or automatically stitched screenshots from a reusable file library.
 
-Live app: **https://talgreen-music-room.web.app**. Create a room there and share its link/code with another browser or phone; joining makes that participant a Follower. Local development also has a shared server backend for separate browsers and devices. Cloud authorization and live SDK updates have been verified; physical Android/iPhone and network-loss testing remain outstanding in [DETAILED_PLAN.md](DETAILED_PLAN.md). Architecture is in [HIGH_LEVEL_DESIGN.md](HIGH_LEVEL_DESIGN.md).
+Live app: [Music Room](https://talgreen-music-room.web.app). Create a room and share its link/code with another browser or phone; joining makes that participant a Follower. Local development also supports separate browsers and phones. Architecture is in [HIGH_LEVEL_DESIGN.md](HIGH_LEVEL_DESIGN.md); progress and remaining comprehensive device/recovery checks are in [DETAILED_PLAN.md](DETAILED_PLAN.md).
+
+This guide reflects Git history through PR #20 (`bfcdd13`), reviewed on 2026-10-09.
+
+## Features at a glance
+
+| Area | Current behavior |
+| --- | --- |
+| Rooms | Six-digit codes, 24-hour lifetime, no musician login, invitation links and QR codes. |
+| Master | Controls the displayed file, page, zoom and both scroll axes. Compact header shows Master and a larger room code. |
+| Followers | Manual browsing pauses sync for three seconds; manual sync opt-out persists until checked again. No Master navigation buttons, search icon or vertical scrollbar. |
+| Viewer | PDF.js rendering, internal PDF links, document-only pinch/trackpad zoom, two-axis dragging, RTL alignment and Master fast-scroll/page controls. |
+| Library | Persistent PDFs and automatically stitched screenshots. Masters, Followers and Settings administrators can add files; only the Master selects the shared view. |
+| Settings | Room/file lists, previews, uploads, original PDF replacement, default selection and deletion. Room deletion offers keep files, delete files or cancel. |
+| Search | Master header and Settings search across all files or the current room file. Names and readable PDF text, no OCR; redundant index/song-page matches removed. |
+| Sharing | Standard share icon; separate native phone sharing and Copy link actions, plus QR. Native sharing depends on browser support and a secure context. |
+| Explainer | Home-page Hebrew link opens the portrait animation with muted autoplay, Play/Pause, Stop, seeking, volume, mute and a Back to home link. |
+
+## Room controls
+
+The Master opens **☰** for **Add file/song**, **Select file/song**, **Settings**, and the default-checked **RTL** checkbox, in that order. Search uses the separate header icon. The lower toolbar has **↑** (page 1), previous page, page input and next page. Zoom is a document gesture; there are no Master zoom buttons or percentage readout. When viewing a library file, a **PDF** button returns to the room's pinned original songbook.
+
+Followers open **☰** for **Add file/song**, **View files/songs** and **Settings**. File previews are private and do not change the shared view. Their lower toolbar starts with **Master sync**, followed by zoom/page information. Both roles show the larger room code. Settings can open over an active room without disconnecting it; its password input receives focus.
 
 ## Project structure
 
 ```text
 music-room/
-├── src/
-│   ├── main.ts              # Screens, routing, controls, and session coordination
-│   ├── rooms.ts             # Room creation, identity, subscriptions, and position writes
-│   ├── model.ts             # Room/position types, validation, and scroll coordinates
-│   ├── sync.ts              # Throttled Master position publisher
-│   ├── follower-sync.ts     # Three-second browsing pause and manual sync preference
-│   ├── gestures.ts          # PDF-only pointer drag, pinch, and trackpad zoom
-│   ├── scrollbar.ts         # Persistent touch/mouse scrollbar and keyboard scrolling
-│   ├── pdf-links.ts         # Internal PDF destination/page coordinate resolution
-│   ├── viewer.ts            # PDF and screenshot rendering, zoom, and smooth following
-│   ├── stitch.ts            # Screenshot overlap and stationary-bar matching
-│   ├── screenshot-import.ts # Image decoding, cropping and bounded JPEG export
-│   ├── file-upload.ts       # Shared local/Supabase PDF upload client
-│   ├── sheet-dialog.ts      # Import, stitch preview and upload dialog
-│   ├── song-dialog.ts       # Saved song chooser and zoom/pan preview
-│   ├── song-library.ts      # Saved-song metadata and lifecycle helpers
-│   ├── sheets.ts            # PDF/image source manifest and upload validation
-│   ├── style.css            # Dark interface and responsive layouts
-│   └── *.test.ts            # Model, publisher, and local room store tests
-├── server/
-│   ├── local-rooms.ts       # Vite development middleware: room API and SSE streams
-│   └── song-library.ts      # Persistent local catalog/default and file cleanup
-├── scripts/
-│   ├── test-file-library.mjs # PDF/image uploads, defaults and permission checks
-│   ├── test-local-server.mjs # Integration check against a running development server
-│   ├── test-cloud-rooms.mjs  # Integration check with distinct Firebase identities
-│   └── test-cloud-sheets.mjs # Disposable cloud upload/library/security checks
-├── supabase/
-│   ├── storage.sql          # PDF bucket and administrator upload policy
-│   ├── files.sql            # Shared PDF bucket and Settings-only cleanup
-│   └── sheets.sql           # Screenshot bucket, upload and cleanup policies
-├── public/songbooks/        # Versioned PDFs copied into each build
-├── index.html               # Browser entry point
-├── vite.config.ts           # Development server and deployment configuration guard
-├── tsconfig.json            # TypeScript compiler settings
-├── package.json             # Dependencies and development/build/test commands
-├── package-lock.json        # Locked dependency versions for npm ci
-├── firebase.json            # Hosting, anonymous auth, database rules, and emulators
-├── database.rules.json      # Server-enforced room permissions and schema validation
-├── .firebaserc              # Default Firebase project
-├── .env.example             # Example local-development settings
-├── .env.deployment.example  # Example settings for a cloud deployment
-├── HIGH_LEVEL_DESIGN.md     # Detailed architectural decisions and future boundaries
-├── DETAILED_PLAN.md         # Stories, acceptance criteria, and progress checkboxes
-└── README.md                # Setup, architecture, and operations guide
+|-- src/
+|   |-- main.ts              # Routing, room menus and session coordination
+|   |-- rooms.ts             # Backend selection, identity, rooms and uploads
+|   |-- model.ts             # Room/position validation and coordinates
+|   |-- sync.ts              # Throttled Master publisher
+|   |-- follower-sync.ts     # Temporary browsing and manual sync preference
+|   |-- viewer.ts            # PDF/image rendering and smooth following
+|   |-- gestures.ts          # Document drag/pinch/trackpad gestures
+|   |-- scrollbar.ts         # Master fast-scroll control
+|   |-- pdf-links.ts         # Internal PDF destination resolution
+|   |-- search.ts            # Matching and result deduplication
+|   |-- pdf-search.ts        # Text/link extraction and local index cache
+|   |-- search-dialog.ts     # Global/current-file search interface
+|   |-- stitch.ts            # Screenshot overlap matching
+|   |-- screenshot-import.ts # Decoding, cropping and bounded JPEG export
+|   |-- file-upload.ts       # Local/Supabase PDF upload client
+|   |-- sheet-dialog.ts      # Upload/stitch/original-replacement dialog
+|   |-- song-dialog.ts       # Auto-refreshing library and private previews
+|   |-- song-library.ts      # Metadata, room attribution and cleanup helpers
+|   |-- sheets.ts            # PDF/image manifests and validation
+|   |-- settings.ts          # Administrator screen and in-room dialog
+|   |-- admin.ts             # Administrator backend/Storage operations
+|   |-- room-delete-dialog.ts # Keep/delete-files choice
+|   |-- songbook.ts          # Original PDF descriptor and upload validation
+|   |-- settings-password.mjs # Shared Settings credential conversion
+|   |-- icons.ts, clipboard.ts # Standard icons and mobile copy fallback
+|   |-- style.css            # Dark responsive layouts
+|   `-- *.test.ts            # Focused unit and regression checks
+|-- server/
+|   |-- local-rooms.ts       # Development API, upload sessions and SSE
+|   |-- song-library.ts      # Durable local catalog/default and cleanup
+|   `-- admin-auth.ts        # Local password sessions
+|-- scripts/
+|   |-- test-local-server.mjs, test-settings.mjs
+|   |-- test-file-library.mjs, test-room-files.mjs
+|   |-- test-follower-uploads.mjs, test-pdf-compat.mjs
+|   |-- test-local-suite.mjs  # Isolated integration runner
+|   |-- test-cloud-rooms.mjs, test-cloud-settings.mjs
+|   |-- test-cloud-files.mjs, test-cloud-sheets.mjs
+|   `-- setup-settings-admin.mjs
+|-- supabase/
+|   |-- files.sql            # Shared PDF bucket and UID-scoped policies
+|   |-- sheets.sql           # JPEG bucket and UID-scoped policies
+|   `-- storage.sql          # Legacy Settings PDF bucket
+|-- public/
+|   |-- songbooks/           # Bundled versioned PDFs
+|   `-- explainer/           # Standalone Hebrew animation and soundtrack
+|-- index.html, vite.config.ts, tsconfig.json
+|-- package.json, package-lock.json
+|-- .github/workflows/tests.yml # PR/main local checks
+|-- firebase.json, database.rules.json, .firebaserc
+|-- .env.example, .env.deployment.example
+|-- HIGH_LEVEL_DESIGN.md, DETAILED_PLAN.md, WEBSITE_CASTING_DESIGN.md
+|-- TESTING.md               # Coverage map and acceptance checklists
+|-- AGENTS.md                # Contributor rules, testing/docs and release workflow
+`-- README.md
 ```
 
 The original supplied PDF remains at the repository root. Its published copy is `public/songbooks/songbook-2026-10.pdf`. `dist/` is generated build output; `node_modules/` contains installed dependencies. Both directories, local environment files, and debug artifacts are ignored by Git.
@@ -92,6 +125,7 @@ The room is stored under `rooms/<code>` with this shape:
   "pdfVersion": "2026-10",
   "pdfTitle": "Songbook",
   "position": {
+    "sourceId": "pdf",
     "page": 37,
     "offset": 0.62,
     "zoom": 1.1,
@@ -137,6 +171,12 @@ The development API lives in `server/local-rooms.ts`. It creates in-memory rooms
 
 The dedicated `build:deploy` command requires complete cloud Firebase settings and rejects emulator mode. Firebase Hosting runs it automatically before every upload.
 
+## Room sharing
+
+The Master header uses a standard share icon. Its invitation dialog shows the room code, URL and QR, with separate **Share room link** and **Copy room link** icons. Share opens the phone's native sharing sheet when supported; cancelling is silent. Copy uses a synchronous modal-safe selection with a secure Clipboard API fallback, and reports success or failure. If copying fails, the displayed URL is available for manual copying.
+
+Native sharing normally requires HTTPS (or localhost) and browser support. A phone visiting the computer's plain HTTP LAN address may support room synchronization while lacking native sharing. Use the deployed HTTPS app to test the phone share sheet.
+
 ## Run locally for debugging
 
 Requires Node.js 22.12+ (Node 24 recommended) and npm.
@@ -162,6 +202,22 @@ HTTP on a LAN address may lack clipboard/secure-context APIs. Copy the displayed
 
 ## Checks and production preview
 
+The feature-by-feature test map, cloud checks and browser/phone checklist are in
+[TESTING.md](TESTING.md). Run the isolated local integration suite without starting
+a development server or touching your saved library:
+
+```powershell
+npm.cmd run test:integration
+```
+
+This starts a temporary server with disposable storage and runs room, Settings,
+library, room-retention, Follower upload and real PDF rendering checks. GitHub
+Actions runs type checking, unit tests, this suite and the build on PRs/main.
+
+Local verification on 2026-10-09: **79 unit tests**, all six isolated integration/
+PDF checks, type checking and build passed. Cloud checks and physical-phone
+acceptance are separate; see the test guide for their scope and commands.
+
 ```powershell
 npm.cmd run check
 npm.cmd run test
@@ -176,6 +232,17 @@ node scripts/test-local-server.mjs
 ```
 
 This creates a disposable test room and verifies independent joining, Master-only writes, live position streaming, and the reconnect snapshot.
+
+Additional checks against the running local server:
+
+| Command | Coverage |
+| --- | --- |
+| `node scripts/test-settings.mjs` | Settings authorization, imports and active-room retention |
+| `node scripts/test-file-library.mjs` | PDF/image uploads, defaults and cleanup |
+| `node scripts/test-room-files.mjs` | Per-room uploads and keep/delete-files choices |
+| `node scripts/test-follower-uploads.mjs` | Follower PDFs/images, upload-only permissions, Master selection and retention |
+
+These create disposable fixtures and clean up their own records. Where they temporarily change a default, they restore it. Use a controlled local test session; keep the server running throughout each check.
 
 To check the PDF compatibility bundle against the supplied index and a song page with newer JavaScript APIs initially absent:
 
@@ -230,7 +297,7 @@ For testing only on your computer, the default loopback bindings work. To use a 
 
 The root `חוברת שירים.pdf` is preserved. Its publishing copy is `public/songbooks/songbook-2026-10.pdf`.
 
-Defaults work without PDF environment settings. To publish a replacement:
+Use **Settings > Replace original PDF** for normal monthly songbook updates; no frontend build is needed. The Settings descriptor takes precedence over the bundled/environment fallback. If another library file is the default, replacement keeps that selection unchanged. Existing rooms pin the old descriptor. To change the bundled fallback for a fresh installation:
 
 1. Add a new file under `public/songbooks/` with a new versioned name.
 2. Set `VITE_PDF_URL`, `VITE_PDF_VERSION`, and `VITE_PDF_TITLE` in environment configuration.
@@ -243,7 +310,7 @@ Every room pins its URL/version/title at creation. Active rooms keep the same bo
 
 Every completed PDF or screenshot upload is saved in the shared library and remains selectable in future rooms. Files are not removed when the upload room expires or is deleted with **keep files**. Default selection and deletion remain Settings-only actions.
 
-Settings lists all available library files with upload origin/date, preview and deletion controls. Each room has an expandable **Uploaded files** list with previews. This lists files actually uploaded in that room, rather than existing files selected from the library. Room code, uploader and upload timestamp identify the origin; older uploads are not attributed to a newly reused room code.
+Settings lists available files with upload origin/date and preview/deletion controls. Each room has an expandable **Uploaded files** list including Master and Follower contributions. Selecting an existing file does not count as an upload. Attribution uses room code and upload time within the room lifetime, protecting older uploads when codes are reused; metadata also records the uploader.
 
 Deleting one room or all rooms asks whether to **keep files**, **delete room(s) and files**, or **cancel**. Keep is the first option. Delete removes only uploads originating in those rooms; Settings uploads and other-room uploads stay in the library. The current default is always protected. A deleted file still displayed in another active room keeps its stored bytes until that room switches away or expires. Selecting it in new rooms is blocked immediately.
 
@@ -251,19 +318,29 @@ Local bulk file changes are serialized and persisted before removing rooms. Clou
 
 ## Song search
 
-Use **Search songs** in Settings or a room to search the original songbook and every available library file. Search always starts with **All files**, the first scope option. In a room, choose **Current file** to limit the search, or use **Search all files** in the Master menu. Enter a song, artist or file name and press Enter or Search; submission dismisses the mobile keyboard to expose results. Results show the file, matching text and destination page. Click a result to open it. Linked PDF index results open their song destination rather than the index page.
+Use the Master header search icon or **Search songs** in Settings to search the original songbook and every available library file. Search starts with **All files**, the first scope option. In a room, choose **Current file** to limit the search. There is no search menu item, Home search button or Follower search icon. Enter a song, artist or file name and press Enter or Search; submission dismisses the mobile keyboard. Click a result to open its file and destination page. Linked PDF index results open the song destination.
 
-Master selections update the room for everyone. A Follower can jump within the current file using the existing three-second browsing pause, or preview another file privately. Home and Settings results open a preview. Manual Master-sync preferences remain unchanged.
+Master search selections update the room for everyone. Settings results open a private preview. If both an index link and song-page text match, only the song-page result is shown. Repeated index links to the same destination are collapsed; distinct text occurrences remain available.
 
 `src/search.ts` handles matching and result coordinates; `src/pdf-search.ts` extracts PDF.js text and internal link destinations without rendering canvases; `src/search-dialog.ts` handles scope, progress, cancellation and opening results. Matching ignores case, accents and Hebrew niqqud. New uploads retain original file names even when renamed; older entries use their title and, for PDFs, URL basename.
 
 PDFs are searched sequentially on the device. Names appear immediately; text results appear after each PDF finishes. The first search downloads the PDFs; completed text indexes are cached in IndexedDB for up to 24 hours, capped at 20 PDFs. Storage restrictions fall back to extracting again. Stop or closing the dialog cancels extraction. Search adds no cloud service or server text index.
 
-Before publishing this feature, deploy the updated `database.rules.json` allowing the optional `fileNames` metadata in catalog and room manifests. Existing records remain compatible. Physical-phone search acceptance and cloud-rule verification are tracked in the plan.
+Deployed rules support optional `fileNames` metadata; older entries remain compatible. Search regression tests cover matching, cancellation, internal destinations and index/song-page deduplication.
+
+## Hebrew animation explainer
+
+Open [the animation](https://talgreen-music-room.web.app/explainer/index.html) directly or follow **איך זה עובד? צפו בסרטון קצר** below Create/Join on the home page. Locally, use `http://localhost:5173/explainer/index.html`.
+
+The 42-second portrait animation demonstrates separate musicians searching/scrolling, room creation/joining, song selection, synchronized drag/zoom, adding songs and future reuse. The Master phone appears above two Followers; Hebrew captions sit below the animation. All artwork and the original energetic 140 BPM soundtrack are generated locally in JavaScript, without remote media or room/file access.
+
+Playback starts automatically **muted**, except when reduced motion is requested. Controls are Play/Pause, Stop (reset to zero), timeline, volume and mute. Unmuting enables music without restarting; browsers require a user gesture for sound. Leaving the tab pauses playback. **חזרה לעמוד הבית** is always available, and the closing scene also offers **להתחלה - לחץ כאן**. The current player has no export/download button or extra explanatory text.
+
+Sources and storyboard notes are in [public/explainer/README.md](public/explainer/README.md). Vite copies the files unchanged; Hosting revalidates `/explainer/**` with `no-cache`.
 
 ## Deployment
 
-The initial deployment uses **Firebase Hosting**, anonymous Authentication, and Realtime Database in `europe-west1`, in the dedicated project `talgreen-music-room`. No billing upgrade was made. Manage usage at https://console.firebase.google.com/project/talgreen-music-room/overview. The PDF is served by Hosting, not Cloud Storage.
+The initial deployment uses **Firebase Hosting**, anonymous Authentication, and Realtime Database in `europe-west1`, in the dedicated project `talgreen-music-room`. No billing upgrade was made. Manage usage at https://console.firebase.google.com/project/talgreen-music-room/overview. The bundled PDF is served by Hosting; uploaded PDFs and screenshots are served by Supabase Storage. Firebase Storage is not used.
 
 ### First-time setup on a machine
 
@@ -286,9 +363,12 @@ Skip copying the example if `.env.deployment.local` already exists, to preserve 
 | `VITE_FIREBASE_DATABASE_URL` | Full European Realtime Database URL from the example file |
 | `VITE_FIREBASE_PROJECT_ID` | `talgreen-music-room` |
 | `VITE_USE_FIREBASE_EMULATORS` | Must be `false` for deployment |
+| `VITE_ADMIN_EMAIL` | Separate Settings account; defaults to `settings@music-room.app` |
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | Storage project URL and public key for uploaded PDFs/images |
+| `MUSIC_ADMIN_PASSWORD` | Server-only local Settings/provisioning/test value; never prefixed with `VITE_` |
 | `VITE_PDF_URL`, `VITE_PDF_VERSION`, `VITE_PDF_TITLE` | Optional songbook overrides |
 
-Vite embeds `VITE_*` values into the browser bundle at build time; changing these settings requires rebuilding. Keep passwords, service-account keys, and CLI login tokens out of these files. The Firebase CLI uses its own saved sign-in session to administer and deploy the project; browser participants use anonymous authentication. `firebase.cmd logout` removes the CLI's saved access.
+Vite embeds `VITE_*` values into the browser bundle at build time; changing these settings requires rebuilding. Keep service-account keys and CLI login tokens out of application environment files. The server-only `MUSIC_ADMIN_PASSWORD` may be set in an ignored local environment file for local Settings/provisioning/tests; never use a `VITE_` prefix or commit it. The Firebase CLI uses its own saved sign-in session to administer and deploy the project; browser participants use anonymous authentication. `firebase.cmd logout` removes the CLI's saved access.
 
 Deployment settings do not change `npm run dev`, which continues to use the local shared server unless `.env.local` configures Firebase. On this computer, if Firebase needs the Windows trust store, set `$env:NODE_OPTIONS='--use-system-ca'` before running its commands.
 
@@ -318,6 +398,15 @@ node --use-system-ca scripts/test-cloud-rooms.mjs
 
 Verify the changed permissions before publishing any frontend that depends on them. The tracked configuration enables anonymous authentication for musicians and email/password authentication for the Settings account.
 
+For changes involving library uploads or permissions, apply any required Supabase policy changes and deploy database rules first. Then run the relevant checks before publishing Hosting:
+
+```powershell
+node --use-system-ca scripts/test-cloud-files.mjs
+node --use-system-ca scripts/test-cloud-sheets.mjs
+```
+
+These use real Firebase/Supabase and disposable fixtures. The PDF check temporarily changes the global default and restores it; run checks sequentially in a controlled session. Both remove their test rooms, records and bytes. They verify Master/Follower uploads, exact downloads, source selection, denied privileged writes and cleanup. Frontend-only changes need the regular type/test/build checks; do not run cloud mutation checks unnecessarily.
+
 The zoom/pan release requires the updated database rules **before** Hosting: the previous rules reject the new `horizontal` field and zoom values above 200%. These rules are deployed; the field is optional so existing room snapshots and older clients remain readable. For future schema changes, deploy rules first, run the cloud smoke test, and then publish Hosting. The smoke test now exercises horizontal pan and 300% zoom. Refresh each participant's browser after deploying a viewer update.
 
 The cloud smoke test uses two distinct anonymous identities. It checks atomic creation/collision handling, active-room reads, live position updates, late snapshots, denied Follower writes/deletion/ownership changes, denied enumeration, immutable PDF metadata, and rejected malformed positions. Expected `permission_denied` warnings demonstrate the restrictions. Each run leaves one test room that becomes unreadable after 24 hours; remove old records through the Firebase console when needed.
@@ -333,7 +422,7 @@ Cloudflare Pages can host the same frontend while Firebase continues to provide 
 | Build command | `npm run build:deploy` |
 | Output directory | `dist` |
 | Node version | 24 |
-| Environment variables | The same cloud Firebase and optional PDF settings listed above |
+| Environment variables | The same Firebase, Supabase, Settings account email and optional PDF settings listed above |
 
 Serve the versioned PDFs and generated PDF.js worker from the same deployment; add the chosen host to Firebase authorized domains if needed. The Vite development API is not included in Pages. No Cloudflare resources were created for the initial deployment.
 
@@ -341,9 +430,9 @@ Serve the versioned PDFs and generated PDF.js worker from the same deployment; a
 
 ### Settings and file uploads
 
-Implementation modules are `src/settings.ts` (screen/forms), `src/admin.ts` (local/Firebase/Storage operations), `src/songbook.ts` (descriptor/upload validation), `server/admin-auth.ts` (local password sessions), and `supabase/storage.sql` (bucket/policy setup). Cloud checks are in `scripts/test-cloud-settings.mjs`; account provisioning is in `scripts/setup-settings-admin.mjs`.
+Implementation modules are `src/settings.ts` (screen/forms), `src/admin.ts` (local/Firebase/Storage operations), `src/songbook.ts` (descriptor/upload validation), `server/admin-auth.ts` (local password sessions), and `supabase/files.sql` and `supabase/sheets.sql` (current bucket/policy setup; `storage.sql` is legacy). Cloud checks are in `scripts/test-cloud-settings.mjs`; account provisioning is in `scripts/setup-settings-admin.mjs`.
 
-The home screen has a **Settings** button. Unlock it using the configured administrator password to list rooms, delete one room or all rooms (with confirmation), view all saved PDFs/image songs, add a PDF (up to 30 MB) or screenshots, choose the default, and delete uploaded files. Masters can upload and select files in their rooms; only Settings administrators can set the default or delete. Changing the default affects new rooms. Existing rooms keep their selected source; deletion retains active copies until those rooms switch away or expire. Choose another default before deleting the current one. The bundled/original songbook is a permanent fallback and is not deleted from this screen.
+The home screen has a **Settings** button. Unlock it with the configured administrator password to list/delete rooms, view/add/delete PDFs and image songs, replace the original PDF and choose the default. Masters and Followers can upload in rooms; only Masters select the shared file, and only Settings administrators manage the default or deletion. Changing the default affects new rooms. Choose another default before deleting the current one. Active rooms retain copies of deleted files until they switch away or expire. The original songbook is a permanent fallback; update it with **Replace original PDF** rather than deleting its row.
 
 Local Settings uses `MUSIC_ADMIN_PASSWORD` in `.env.local` (server-only, never `VITE_`). Uploaded files and the default descriptor persist under ignored `.local-data/`; local rooms remain in memory and disappear on restart. Run `node scripts/test-settings.mjs` against `npm run dev` to check authorization, upload/download, room pinning and targeted deletion. The test restores the default and removes only its own rooms.
 
@@ -376,7 +465,7 @@ Realtime traffic contains only page, normalized vertical offset, normalized hori
 
 ## Upload and choose files
 
-Open **Room menu > Add file/song** as Master, or **Settings > Files & songs > Add file/song** as administrator. Choose one PDF, or one or more PNG/JPEG/WebP screenshots. Mixed PDF/image selections and multiple PDFs in one upload are rejected; add PDFs individually. Enter an optional name; an empty name uses the filename. PDFs keep their pages and clickable internal links. Image selections use the existing automatic stitch/crop preview. Both kinds are saved permanently and can be selected from any room. Only the Master switches the room source.
+Open **Room menu > Add file/song** as Master or Follower, or **Settings > Files & songs > Add file/song** as administrator. Separate **Choose PDF** and **Choose screenshots** inputs select one PDF or multiple PNG/JPEG/WebP images. Neither requests camera capture; the browser may still offer a camera choice for images. Mixed PDF/image selections and multiple PDFs are rejected. Enter an optional name; an empty name uses the filename. PDFs retain internal links; images use automatic stitching/crop preview. Files persist for future rooms. Master uploads select the file after saving; Settings and Follower imports leave the shared view unchanged. A Follower presses **Add to room library**; its confirmation hides after five seconds.
 
 In Settings, **Make default** marks the file for new rooms. **View** previews PDFs and stitched images with zoom/pan. **Delete** is unavailable for the current default until another default is selected. Files already in use stay visible in those rooms; unused deleted files are cleaned up by a Settings refresh or room deletion. The original songbook remains the first picker choice and a fallback default.
 
@@ -384,7 +473,7 @@ Locally, `.local-data/songs.json` now stores `{version:2,defaultId,files}`; old 
 
 With the dev server running, run `node scripts/test-file-library.mjs` for uploads, role permissions, PDF/image defaults, active-room retention and cleanup. It restores the original default and removes its own records/rooms. Phone upload/pinch testing remains a manual check.
 
-Before deploying this feature, apply **supabase/files.sql**, deploy the updated database rules, verify cloud PDF uploads/default permissions, then publish Hosting. New PDF uploads require the new `room-pdfs` bucket; keeping the old bucket avoids breaking existing rooms. These policies/rules and the frontend were deployed on 2026-10-05. Run `node --use-system-ca scripts/test-cloud-files.mjs` to verify PDF uploads, defaults and permissions; it restores the original default and removes its disposable files/rooms.
+For a new installation, apply **supabase/files.sql** and **supabase/sheets.sql**, deploy the database rules and verify upload/default permissions before Hosting. Current production already has these policies and the Follower upload rules. Keep legacy buckets and URLs until rooms using them expire. Run `node --use-system-ca scripts/test-cloud-files.mjs` to verify PDF uploads, defaults and permissions; it restores the original default and removes its disposable files/rooms.
 
 ## Share chord screenshots
 
@@ -400,7 +489,7 @@ Followers can open **☰ > Add file/song** to upload a PDF or stitched screensho
 
 To update the original songbook, unlock Settings and choose **Replace original PDF** beside its row. Choose one PDF (up to 30 MB), optionally enter a name, and confirm replacement. The upload uses a new immutable URL and version; existing rooms retain their previous descriptor. Replacing the original does not change which library entry is selected as the default. Choose **Make default** on its row if another file is currently the default. The original remains a permanent fallback entry and is managed only in Settings.
 
-Cloud catalog creation accepts an anonymous authenticated participant's own upload associated with an active room code. Local development instead issues upload-only join tokens. Storage paths and catalog metadata remain owned by the uploader; shared source/position writes remain Master-only. Run `node scripts/test-follower-uploads.mjs` against the local development server to verify PDF/image uploads, permissions, shared selection and room cleanup with disposable fixtures. Updated cloud checks in `test-cloud-files.mjs` and `test-cloud-sheets.mjs` should run after deploying the accompanying database rules.
+Cloud catalog creation accepts an anonymous authenticated participant's own upload associated with an active room code. Local development instead issues upload-only join tokens. Storage paths and catalog metadata remain owned by the uploader; shared source/position writes remain Master-only. Run `node scripts/test-follower-uploads.mjs` against the local development server to verify PDF/image uploads, permissions, shared selection and room cleanup with disposable fixtures. Cloud checks in `test-cloud-files.mjs` and `test-cloud-sheets.mjs` verify actual Follower imports and retained authorization boundaries; run them after relevant rule or Storage changes.
 
 ### Local testing
 
@@ -411,9 +500,9 @@ Run `npm run dev`, create a room and upload screenshots. Open its link from anot
 Screenshot sharing and the song library are deployed at the live app. For another installation, or changes to these policies:
 
 1. Run [supabase/sheets.sql](supabase/sheets.sql) in the existing project's SQL editor. Adjust the Firebase project ID for other installations. It creates the public `room-sheets` bucket and an insert-only Firebase-token policy scoped to the uploader's UID. Firebase third-party Auth and the two public Supabase environment settings are the same as for Settings PDF uploads.
-2. Validate and deploy the updated `database.rules.json` before publishing the frontend. The rules permit only the Master to change the source/position and require matching source IDs. Run `node --use-system-ca scripts/test-cloud-sheets.mjs` to verify real uploads/downloads, Master and room-free Settings imports, Follower denial, reconnect, tombstones and administrator cleanup. It uses `MUSIC_ADMIN_PASSWORD` from the local environment and removes only its own disposable rooms, catalog entries and JPEGs. Do not put that password in a `VITE_*` variable.
+2. Validate and deploy the updated `database.rules.json` before publishing the frontend. The rules permit only the Master to change the source/position and require matching source IDs. Run `node --use-system-ca scripts/test-cloud-sheets.mjs` to verify real uploads/downloads, Master/Follower and room-free Settings imports, denied Follower source/default/deletion writes, reconnect, tombstones and administrator cleanup. It uses `MUSIC_ADMIN_PASSWORD` from the local environment and removes only its own disposable rooms, catalog entries and JPEGs. Do not put that password in a `VITE_*` variable.
 3. Run `npm run build:deploy`, then publish Hosting using the existing deployment process. Refresh all devices after release; older frontend clients do not support image sheets.
 
 No extra service or billing upgrade is introduced. Uploaded sheets consume the existing free Storage and download allowances. Saved songs remain available until deleted in **Settings > Files & songs**, which lists every song and offers **View** and **Delete**. Deletion hides the library entry immediately. Active rooms retain their current copy. On Settings refresh or room deletion, unused deleted songs have their tiles and metadata removed; this avoids interrupting active players while reclaiming storage. Cloud tombstones live under `/songs/<id>/deletedAt`; only the Settings administrator can delete/clean up, and room rules prevent selecting tombstoned songs. Apply the SELECT/DELETE administrator policies in `supabase/sheets.sql` as well as its upload policy. Adjust the Firebase project, administrator UID and Supabase public URL in the SQL/rules for other installations. Failed upload attempts can also leave unused files. Saved local files use the same deletion lifecycle; avoid clearing `.local-data/` if you want to retain the library.
 
-Release verified on 2026-10-05: 52 unit tests, type checking, PDF compatibility rendering, local HTTP integration and real-cloud screenshot/PDF room checks passed. Storage SQL and database rules were applied before Firebase Hosting publication. The user approved local testing. Detailed physical Android/iPhone seam, memory and background behavior checks remain tracked in the plan.
+Latest release verification (2026-10-08): all 68 unit tests and the deployment build passed. Live Firebase/Supabase checks verified Follower PDF/image uploads, Master selection, permission restrictions, defaults, room/file retention and disposable-file cleanup. Browser checks verified player controls. Comprehensive physical-device memory/background/recovery and original-PDF replacement acceptance remain tracked in the plan.

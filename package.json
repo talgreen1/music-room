@@ -9,6 +9,7 @@
                     "preview":  "vite preview --host 0.0.0.0",
                     "check":  "tsc --noEmit",
                     "test":  "vitest run",
+                    "test:integration":  "node scripts/test-local-suite.mjs",
                     "emulators":  "firebase emulators:start --only auth,database --project demo-music-room",
                     "build:deploy":  "tsc \u0026\u0026 vite build --mode deployment"
                 },
