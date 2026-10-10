@@ -1,3 +1,8 @@
+/** Synced read-only Followers must explicitly opt out before interacting. */
+export function canInteractWithDocument(ready: boolean, controlsRoom: boolean, following: boolean) {
+  return ready && (controlsRoom || !following);
+}
+
 /** Manual opt-out stays off; browsing otherwise resumes sync after inactivity. */
 export class FollowerSync {
   private manualPause = false;

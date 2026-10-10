@@ -33,7 +33,7 @@ Paths in the Unit column are under `src/`; Integration paths are under `scripts/
 | --- | --- | --- |
 | Create/join, room code collisions, expiry and Master ownership | `model.test.ts`, `local-rooms.test.ts` | `test-local-server.mjs`; `test-cloud-rooms.mjs`; two-browser join checklist |
 | Live position updates, throttling, stale-source/sequence rejection | `sync.test.ts`, `model.test.ts`, `local-rooms.test.ts` | Local SSE/reconnect check; cloud live subscriptions; network recovery checklist |
-| Follower three-second return and persistent manual opt-out | `follower-sync.test.ts` | Touch/held-drag and multiple-update browser checks |
+| Default synced Follower lock and explicit private browsing | `gestures.test.ts` covers drag/pinch, rechecking mid-gesture and controller/loading behavior; `follower-sync.test.ts` covers persistent manual opt-out | Locked-Follower browser checks below |
 | Pinch, two-axis drag, trackpad zoom and dragging over PDF links | `gestures.test.ts`, `model.test.ts` | Local/cloud normalized position checks; Android/iPhone gesture checklist |
 | Internal links, named destinations and RTL alignment | `pdf-links.test.ts`, gesture tap suppression | Real supplied-PDF destination tests; browser RTL/zoom checklist |
 | PDF rendering and mobile compatibility | Actual PDF/link/search regressions | `test-pdf-compat.mjs` renders ink on actual pages with newer built-ins initially missing; phone memory/rotation checks |
@@ -84,7 +84,7 @@ results. Record date, browser/device, build and any failures when checking them 
 - [ ] Menus: Add file/song is first; Master has Select file/song, Settings and RTL; Follower has View files/songs and Settings. No search menu item or Home/Follower search button.
 - [ ] Master viewport: first-page arrow, previous/next and page input work on the first, middle and final PDF pages; only Master has the vertical scrollbar. Rotate portrait/landscape and check reachable controls.
 - [ ] Sync: scroll, drag both axes and pinch on Master; Follower follows. Join late, disconnect/reconnect and background/restore a phone; it returns to the latest shared source/position.
-- [ ] Follower browsing: drag/pinch/link click pauses sync; return occurs three seconds after interaction ends, never during a held drag. More activity restarts the delay. Manual opt-out persists until checked again.
+- [ ] Follower browsing: Master sync starts checked. Touch drag/pinch, wheel/trackpad, keyboard scrolling and PDF links cannot move a synced read-only Follower or uncheck sync. Uncheck manually; drag/zoom/link navigation works privately and stays unsynced after more than three seconds. Recheck to snap to the latest shared position and relock. Incoming page/zoom/scroll updates still work while locked.
 - [ ] PDF links: tap a song index at normal/high zoom; preserve zoom and align right with RTL on, left with RTL off. Pinch starting on links must not navigate accidentally or zoom browser chrome.
 - [ ] Upload pickers: cancel, reselect the same file, choose PDF/images separately; reject invalid/oversized PDF. Optional name and original filenames persist.
 - [ ] Stitching: upload overlapping captures, review uncertain joins, reorder/crop/update preview. Check no missing lines or repeated stationary browser bars; view at high zoom on both phones.
@@ -115,7 +115,16 @@ for this test-only work.
 - [ ] Try incorrect Settings password, then the correct one. Success grants only room control and signs Settings out; opening Settings again still requires a password.
 - [ ] Owner and controller alternate file changes, link jumps, pinches, horizontal/vertical drags and fast scrollbar drags. Both see the latest change, other following devices follow, and no idle updates/oscillation continue.
 - [ ] Hold a drag/pinch/scrollbar while receiving server echoes. Further movement still updates every viewer. Exercise competing controllers and source switches; no old-source movement leaks into the new file.
-- [ ] Uncheck pending to cancel; uncheck approved to release. Private browsing resumes existing three-second follow behavior. Re-enable using approval/password again.
+- [ ] Uncheck pending to cancel; uncheck approved to release. Master sync returns checked and locks the read-only view. Uncheck it to browse privately. Re-enable using approval/password again.
 - [ ] Disconnect/reconnect, navigate away during password login or PDF load, expire/delete the room. No obsolete grants/writes/UI callbacks, stale local replay or Settings session remains. Local refresh needs a new grant; cloud refresh retains the same UID grant.
 
-Evidence for this change: 90 unit/regression tests and seven isolated local integration scripts passed; type checking and build are recorded in the implementation report. Actual Firebase control rules checks passed against production on 2026-10-10, including concurrent transactions starting with empty client caches. Real touch/UI acceptance has not yet run. `test-cloud-control.mjs` is outside CI and must run after rules deployment before publishing the dependent frontend. It tests self-grant denial, pending requests, owner denial/approval, administrator grants, concurrent sequences, source reset, revocation, stale writes and Settings/owner permission isolation. It removes its own rooms and does not modify global default/catalog/storage.
+Evidence for this change: 92 unit/regression tests and seven isolated local integration scripts passed; type checking and build are recorded in the implementation report. Actual Firebase control rules checks passed against production on 2026-10-10, including concurrent transactions starting with empty client caches. Real touch/UI acceptance has not yet run. `test-cloud-control.mjs` is outside CI and must run after rules deployment before publishing the dependent frontend. It tests self-grant denial, pending requests, owner denial/approval, administrator grants, concurrent sequences, source reset, revocation, stale writes and Settings/owner permission isolation. It removes its own rooms and does not modify global default/catalog/storage.
+
+## Synced Follower interaction lock (2026-10-10)
+
+- [ ] On Android/iPhone and desktop, verify a newly joined read-only Follower cannot drag/scroll/pinch while Master sync is checked, but follows all owner/controller page/zoom/scroll changes.
+- [ ] Uncheck Master sync, browse via touch, wheel/keyboard and PDF links, and wait beyond three seconds. Sync stays off and no other viewer moves.
+- [ ] Recheck: return to the latest room position and relock. Repeat while holding a gesture; no further gesture movement affects the locked view.
+- [ ] Grant control: shared drag/zoom works. Release control: Master sync is checked and interaction locked again. Masters remain interactive throughout.
+
+These browser/device procedures have not yet been run. No backend rules or Storage policies change in this feature.

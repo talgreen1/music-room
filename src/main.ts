@@ -8,7 +8,7 @@ import { validCode, type Room } from './model';
 import { SongbookViewer } from './viewer';
 import { PositionPublisher } from './sync';
 import { PdfScrollbar } from './scrollbar';
-import { FollowerSync } from './follower-sync';
+import { FollowerSync, canInteractWithDocument } from './follower-sync';
 import { showSettings, showSettingsDialog } from './settings';
 import { showSongLibrary, showSongPreview } from './song-dialog';
 import { showSearchDialog } from './search-dialog';
@@ -137,7 +137,7 @@ async function openRoom(code: string) {
     updateFollow();
   }, () => { if (ready && room && token === generation) viewer?.follow(room.position, true, true); });
   followerSync = sync;
-  const beginBrowsing = () => { if (token !== generation || !ready) return; if (controlsRoom) viewer?.cancelFollow(); else sync.begin(); };
+  const beginBrowsing = () => { if (token !== generation || !canInteractWithDocument(ready, controlsRoom, following)) return; if (controlsRoom) viewer?.cancelFollow(); else sync.begin(); };
   const endBrowsing = () => { if (token === generation && !controlsRoom && ready) sync.end(); };
   scrollbar.onScroll = () => viewer?.cancelFollow();
   viewer.onInteractionStart = beginBrowsing; viewer.onInteractionEnd = endBrowsing;
@@ -214,7 +214,7 @@ async function openRoom(code: string) {
     const key = `${position.page}:${position.offset.toFixed(4)}:${(position.horizontal || 0).toFixed(4)}:${position.zoom}`;
     if (key !== lastPublished) { lastPublished = key; publishPosition(position); }
   };
-  const independent = () => controlsRoom || !following;
+  const independent = () => canInteractWithDocument(ready, controlsRoom, following);
   const jump = (page: number) => { if (independent() && ready && Number.isFinite(page)) { viewer?.jump(page); const p = viewer?.position(); if (controlsRoom && p) publishPosition(p, true); } };
   firstPage.onclick = () => jump(1);
   $('#previous').onclick = () => jump(Number($<HTMLInputElement>('#page').value) - 1);
@@ -239,7 +239,7 @@ async function openRoom(code: string) {
     refreshRequests?.();
     requestsButton.hidden = !owner || !requests; requestsButton.title = `Requests (${requests})`; requestsButton.setAttribute('aria-label', `Control requests (${requests})`);
     requestsButton.innerHTML = `<svg aria-hidden="true" width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="7" r="4"/><path d="M1 21v-2a7 7 0 0 1 14 0v2m1-10 2 2 5-5"/></svg><span class="request-count">${requests}</span>`;
-    $('#pdf').classList.toggle('locked', !ready);
+    $('#pdf').classList.toggle('locked', !independent());
     $('#pdf').classList.toggle('following', !controlsRoom && following);
     for (const selector of ['#first-page', '#previous', '#next', '#page', '#zoom-out', '#zoom-in']) ($<HTMLButtonElement | HTMLInputElement>(selector)).disabled = !ready || !independent();
     for (const selector of ['#first-page', '#previous', '#next']) $(selector).hidden = !controlsRoom;

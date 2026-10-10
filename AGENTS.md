@@ -33,9 +33,11 @@ for architecture, [DETAILED_PLAN.md](DETAILED_PLAN.md) for stories, and
 - Followers may upload PDFs/images from an active room and preview library files
   privately. Uploading must not change the shared view. Files persist for everyone
   and future rooms; the Master or an approved controller chooses which file to display.
-- Follower interaction pauses Master sync for three seconds after interaction ends.
-  Further interaction restarts the delay. Manual opt-out persists until explicitly
-  checked again. Do not return while a drag/pinch is still held.
+- Followers without control permission start with Master sync checked and the
+  shared viewer locked against drag, scroll, zoom and internal-link navigation.
+  Only explicit unchecking enables private interaction; it stays unchecked until
+  rechecked, which resumes the latest shared position and locks interaction.
+  Masters and approved controllers retain shared interaction controls.
 - Followers request room control or use the Settings password via a separate,
   temporary Settings session. Pending requests grant no writes. Only the owner
   approves room requests; controllers cannot grant others or acquire Settings
