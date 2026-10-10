@@ -8,6 +8,15 @@ function setup() {
 }
 afterEach(() => vi.useRealTimers());
 describe('Follower sync preference', () => {
+  it('discards browsing timers and held gestures when entering/releasing shared control', () => {
+    const t = setup(); t.sync.begin(); t.sync.end();
+    t.sync.reset(false); vi.advanceTimersByTime(5000);
+    expect(t.resume).not.toHaveBeenCalled();
+    t.sync.begin(); // An old interaction must not survive a role transition.
+    t.sync.reset(true); expect(t.resume).toHaveBeenCalledOnce();
+    t.sync.begin(); t.sync.end(); vi.advanceTimersByTime(3000);
+    expect(t.resume).toHaveBeenCalledTimes(2);
+  });
   it('returns to the latest Master view three seconds after browsing ends', () => {
     const t = setup(); t.sync.begin();
     expect(t.change).toHaveBeenLastCalledWith(false);

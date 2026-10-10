@@ -1,6 +1,6 @@
 import type { SharedFile } from './sheets';
 export interface Position { page: number; offset: number; zoom: number; horizontal?: number; sequence?: number; updatedAt?: number; sourceId?: string }
-export interface Room { masterId: string; pdfUrl: string; pdfVersion: string; pdfTitle: string; createdAt: number; expiresAt: number; position: Position; sheet?: SharedFile }
+export interface Room { masterId: string; pdfUrl: string; pdfVersion: string; pdfTitle: string; createdAt: number; expiresAt: number; position: Position; sheet?: SharedFile; controllers?: Record<string, true>; controlRequests?: Record<string, true> }
 const finite = (value: number, fallback: number) => Number.isFinite(value) ? value : fallback;
 export const MIN_ZOOM = 0.75;
 export const MAX_ZOOM = 4;

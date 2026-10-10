@@ -29,6 +29,11 @@ export class SettingsService {
     } catch { await signOut(auth); throw new Error('Incorrect password or Settings has not been configured.'); }
   }
   async logout() { if (localServerConfigured) await this.request('logout', 'POST'); else if (cloudConfigured) await signOut(this.cloud().auth); }
+  async grantRoomControl(code: string, memberId: string) {
+    if (!/^\d{6}$/.test(code) || !/^[A-Za-z0-9_-]{1,128}$/.test(memberId)) throw new Error('Invalid room participant.');
+    if (localServerConfigured) await this.request(`rooms/${code}/control`, 'POST', { memberId });
+    else await update(ref(this.cloud().db, `rooms/${code}`), { [`controllers/${memberId}`]: true, [`controlRequests/${memberId}`]: null });
+  }
   async rooms(): Promise<Record<string, Room>> { return localServerConfigured ? this.request('rooms') : (await get(ref(this.cloud().db, 'rooms'))).val() || {}; }
   async deleteRooms(code?: string, deleteFiles = false) {
     if (code !== undefined && !/^\d{6}$/.test(code)) throw new Error('Invalid room code.');

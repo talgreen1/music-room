@@ -1,10 +1,10 @@
 # Music Room
 
-A mobile browser songbook: one Master controls the reading position and Followers follow or browse independently. Share the supplied 145-page PDF, any uploaded PDF, or automatically stitched screenshots from a reusable file library.
+A mobile browser songbook: the Master and approved Followers control the shared view; other Followers follow or browse independently. Share the supplied 145-page PDF, any uploaded PDF, or automatically stitched screenshots from a reusable file library.
 
 Live app: [Music Room](https://talgreen-music-room.web.app). Create a room and share its link/code with another browser or phone; joining makes that participant a Follower. Local development also supports separate browsers and phones. Architecture is in [HIGH_LEVEL_DESIGN.md](HIGH_LEVEL_DESIGN.md); progress and remaining comprehensive device/recovery checks are in [DETAILED_PLAN.md](DETAILED_PLAN.md).
 
-This guide reflects Git history through PR #20 (`bfcdd13`), reviewed on 2026-10-09.
+This guide includes the shared room control feature, updated on 2026-10-10.
 
 ## Features at a glance
 
@@ -14,7 +14,8 @@ This guide reflects Git history through PR #20 (`bfcdd13`), reviewed on 2026-10-
 | Master | Controls the displayed file, page, zoom and both scroll axes. Compact header shows Master and a larger room code. |
 | Followers | Manual browsing pauses sync for three seconds; manual sync opt-out persists until checked again. No Master navigation buttons, search icon or vertical scrollbar. |
 | Viewer | PDF.js rendering, internal PDF links, document-only pinch/trackpad zoom, two-axis dragging, RTL alignment and Master fast-scroll/page controls. |
-| Library | Persistent PDFs and automatically stitched screenshots. Masters, Followers and Settings administrators can add files; only the Master selects the shared view. |
+| Library | Persistent PDFs and automatically stitched screenshots. Masters, Followers and Settings administrators can add files; the Master or an approved controller selects the shared view. |
+| Shared control | Followers enable Control room with the Settings password or owner approval. Requests show pending; approved controllers select files and drag/zoom alongside the owner. |
 | Settings | Room/file lists, previews, uploads, original PDF replacement, default selection and deletion. Room deletion offers keep files, delete files or cancel. |
 | Search | Master header and Settings search across all files or the current room file. Names and readable PDF text, no OCR; redundant index/song-page matches removed. |
 | Sharing | Standard share icon; separate native phone sharing and Copy link actions, plus QR. Native sharing depends on browser support and a secure context. |
@@ -26,6 +27,16 @@ The Master opens **☰** for **Add file/song**, **Select file/song**, **Settings
 
 Followers open **☰** for **Add file/song**, **View files/songs** and **Settings**. File previews are private and do not change the shared view. Their lower toolbar starts with **Master sync**, followed by zoom/page information. Both roles show the larger room code. Settings can open over an active room without disconnecting it; its password input receives focus.
 
+### Shared room control
+
+The last element in a Follower's bottom toolbar is **Control room**. Check it to enter the Settings password or choose **Ask for approval**. The password field receives focus. A request closes the dialog and displays **pending** next to the checked box. Pending requests grant no editing rights. The owner opens the header's **Requests** button and approves or denies individual requests; the list refreshes while open.
+
+After approval or successful password entry, the participant is labeled **Controller** and gets the shared file selector, search and navigation controls, plus document drag/zoom. The owner remains **Master**. Both receive each other's changes; the latest accepted edit wins, with monotonic sequence numbers. Unchecking **Control room** cancels a pending request or releases control and returns to following. Only the owner can approve requests through the room UI. Controllers cannot approve others, change ownership/lifetime, set the global default, delete files or delete rooms.
+
+Password unlocking briefly uses the separate Settings identity to grant this musician's room-specific permission, then signs Settings out. It does not replace anonymous musician authentication or leave Settings unlocked. Anyone who knows that password already has Settings access; use owner approval to delegate room-only permissions without revealing it. Grants last for the room lifetime unless released. Local development binds grants to a join session; refreshing/rejoining creates a new session and requires approval again. Firebase grants use the anonymous UID and remain while that identity and room survive. Browser-only static demos do not support shared control.
+
+This feature changes Firebase rules: deploy Database rules, run `node --use-system-ca scripts/test-cloud-control.mjs` against the updated rules, and then deploy Hosting. The cloud check creates/removes only its own rooms and does not change the catalog, default or Storage. Local tests do not verify production rules.
+
 ## Project structure
 
 ```text
@@ -35,6 +46,7 @@ music-room/
 |   |-- rooms.ts             # Backend selection, identity, rooms and uploads
 |   |-- model.ts             # Room/position validation and coordinates
 |   |-- sync.ts              # Throttled Master publisher
+|   |-- control-dialog.ts    # Password/request and owner approval dialogs
 |   |-- follower-sync.ts     # Temporary browsing and manual sync preference
 |   |-- viewer.ts            # PDF/image rendering and smooth following
 |   |-- gestures.ts          # Document drag/pinch/trackpad gestures
@@ -66,6 +78,7 @@ music-room/
 |   |-- test-local-server.mjs, test-settings.mjs
 |   |-- test-file-library.mjs, test-room-files.mjs
 |   |-- test-follower-uploads.mjs, test-pdf-compat.mjs
+|   |-- test-shared-control.mjs, test-cloud-control.mjs
 |   |-- test-local-suite.mjs  # Isolated integration runner
 |   |-- test-cloud-rooms.mjs, test-cloud-settings.mjs
 |   |-- test-cloud-files.mjs, test-cloud-sheets.mjs
@@ -108,7 +121,7 @@ flowchart LR
 
 Creating a room reserves a six-digit code with a Firebase transaction. The room records its creator's UID, creation time, 24-hour expiry, songbook descriptor, and initial position. New rooms start with the administrator-selected default PDF or image sheet. Joining subscribes to that specific room and loads its selected source. The URL contains only the room code, for example `/?room=123456`.
 
-`RoomService` in `src/rooms.ts` handles the backend operations. The Master UI requires both the creator's authenticated UID and a creator flag in the tab's session storage. Database rules independently enforce that only the creator may write positions. Followers can read active rooms but cannot change ownership, the PDF descriptor, or the room lifetime. Root reads are denied. Room-list reads and room deletion require a separately allowlisted Settings administrator.
+`RoomService` in `src/rooms.ts` handles the backend operations. The Master UI requires both the creator's authenticated UID and a creator flag in the tab's session storage. Database rules independently restrict shared position/source writes to the creator and approved controllers. Followers can read active rooms but cannot change ownership, the PDF descriptor, or the room lifetime. Root reads are denied. Room-list reads and room deletion require a separately allowlisted Settings administrator.
 
 Closing the Master tab leaves the last shared position in the room; there is no automatic takeover. Losing the creator's identity/session requires creating another room. Expired Firebase records become inaccessible to participants but remain stored until a maintainer removes them.
 
@@ -167,7 +180,7 @@ The app selects its backend from the build mode and environment settings:
 | Firebase emulator mode | Local auth/database emulators | Development clients reaching the emulator services |
 | Ordinary build without Firebase | Local storage and BroadcastChannel | Tabs in the same browser profile and origin |
 
-The development API lives in `server/local-rooms.ts`. It creates in-memory rooms, supplies a private room-control token only to the creator, issues upload-only sessions to joining Followers, and streams room snapshots. Follower sessions cannot change the shared source or position. It is mounted only by Vite's development server. Static hosting and `npm run preview` do not run this API.
+The development API lives in `server/local-rooms.ts`. It creates in-memory rooms, supplies a private room-control token only to the creator, issues initially upload-only sessions to joining Followers, and streams room snapshots. Owner approval or the Settings password can grant those sessions shared source/position control. It is mounted only by Vite's development server. Static hosting and `npm run preview` do not run this API.
 
 The dedicated `build:deploy` command requires complete cloud Firebase settings and rejects emulator mode. Firebase Hosting runs it automatically before every upload.
 
@@ -188,7 +201,7 @@ npm.cmd run dev
 
 Open **http://localhost:5173**. Without Firebase settings, the development server shares rooms across browsers. Create a room in the first browser, then open the same address in another browser and enter its code or follow the shared link. The joining browser becomes a Follower. No Firebase or Java setup is needed for this local flow.
 
-The local server streams position updates using Server-Sent Events. Only the creator receives a private room-control token, stored in that tab's session. Shared links and room reads never include this token. Followers receive separate upload-only tokens when joining; these expire with the room and cannot change the shared view. Do not duplicate the creator tab, since browsers can copy its session storage.
+The local server streams position updates using Server-Sent Events. Only the creator receives a private room-control token, stored in that tab's session. Shared links and room reads never include this token. Followers receive separate join tokens, initially upload-only; these expire with the room and can edit the shared view only after a room-specific control grant. Do not duplicate the creator tab, since browsers can copy its session storage.
 
 Local rooms live in server memory and reset when the development server restarts; they also expire after 24 hours. Rooms created before the shared backend was added remain browser-only and cannot be joined through the new backend: create one fresh room after updating. Switching the creator's origin loses access to its tab-scoped Master token; keep the creator tab on its original address. Followers may use localhost, 127.0.0.1, or the server's LAN address as appropriate, since these all reach the same server.
 
@@ -231,7 +244,7 @@ With `npm.cmd run dev` already running, verify the shared backend with:
 node scripts/test-local-server.mjs
 ```
 
-This creates a disposable test room and verifies independent joining, Master-only writes, live position streaming, and the reconnect snapshot.
+This creates a disposable test room and verifies independent joining, denied unapproved Follower writes, live position streaming, and the reconnect snapshot.
 
 Additional checks against the running local server:
 
@@ -320,7 +333,7 @@ Local bulk file changes are serialized and persisted before removing rooms. Clou
 
 Use the Master header search icon or **Search songs** in Settings to search the original songbook and every available library file. Search starts with **All files**, the first scope option. In a room, choose **Current file** to limit the search. There is no search menu item, Home search button or Follower search icon. Enter a song, artist or file name and press Enter or Search; submission dismisses the mobile keyboard. Click a result to open its file and destination page. Linked PDF index results open the song destination.
 
-Master search selections update the room for everyone. Settings results open a private preview. If both an index link and song-page text match, only the song-page result is shown. Repeated index links to the same destination are collapsed; distinct text occurrences remain available.
+Master/controller search selections update the room for everyone. Settings results open a private preview. If both an index link and song-page text match, only the song-page result is shown. Repeated index links to the same destination are collapsed; distinct text occurrences remain available.
 
 `src/search.ts` handles matching and result coordinates; `src/pdf-search.ts` extracts PDF.js text and internal link destinations without rendering canvases; `src/search-dialog.ts` handles scope, progress, cancellation and opening results. Matching ignores case, accents and Hebrew niqqud. New uploads retain original file names even when renamed; older entries use their title and, for PDFs, URL basename.
 
@@ -485,7 +498,7 @@ The stitching modules are `src/stitch.ts`, `src/screenshot-import.ts`, `src/shee
 
 To add songs through Settings during a session, open **☰ > Settings**, unlock Settings and choose **Files & songs > Add file/song**. Settings opens over the room; closing it returns to the same page, zoom and position without disconnecting the room. Songs are shared across all rooms. Each Master opens **☰ > Select file/song** to load the current library. The open chooser refreshes automatically; **Refresh files** is also available. A Settings import does not switch anyone's view until their Master selects it.
 
-Followers can open **☰ > Add file/song** to upload a PDF or stitched screenshots with an optional name, then press **Add to room library**. Completed uploads are available to everyone in the room and remain saved for future rooms. **☰ > View files/songs** lets Followers preview library files privately. Uploading or previewing does not change the room's displayed file; the Master selects it from **Select file/song**. Only the Settings administrator can delete files or change the global default. Settings includes Follower contributions in each room's upload list and keep/delete-files policy.
+Followers can open **☰ > Add file/song** to upload a PDF or stitched screenshots with an optional name, then press **Add to room library**. Completed uploads are available to everyone in the room and remain saved for future rooms. **☰ > View files/songs** lets Followers preview library files privately. Uploading or previewing does not change the room's displayed file; the Master or an approved controller selects it from **Select file/song**. Only the Settings administrator can delete files or change the global default. Settings includes Follower contributions in each room's upload list and keep/delete-files policy.
 
 To update the original songbook, unlock Settings and choose **Replace original PDF** beside its row. Choose one PDF (up to 30 MB), optionally enter a name, and confirm replacement. The upload uses a new immutable URL and version; existing rooms retain their previous descriptor. Replacing the original does not change which library entry is selected as the default. Choose **Make default** on its row if another file is currently the default. The original remains a permanent fallback entry and is managed only in Settings.
 
@@ -500,7 +513,7 @@ Run `npm run dev`, create a room and upload screenshots. Open its link from anot
 Screenshot sharing and the song library are deployed at the live app. For another installation, or changes to these policies:
 
 1. Run [supabase/sheets.sql](supabase/sheets.sql) in the existing project's SQL editor. Adjust the Firebase project ID for other installations. It creates the public `room-sheets` bucket and an insert-only Firebase-token policy scoped to the uploader's UID. Firebase third-party Auth and the two public Supabase environment settings are the same as for Settings PDF uploads.
-2. Validate and deploy the updated `database.rules.json` before publishing the frontend. The rules permit only the Master to change the source/position and require matching source IDs. Run `node --use-system-ca scripts/test-cloud-sheets.mjs` to verify real uploads/downloads, Master/Follower and room-free Settings imports, denied Follower source/default/deletion writes, reconnect, tombstones and administrator cleanup. It uses `MUSIC_ADMIN_PASSWORD` from the local environment and removes only its own disposable rooms, catalog entries and JPEGs. Do not put that password in a `VITE_*` variable.
+2. Validate and deploy the updated `database.rules.json` before publishing the frontend. The rules permit the Master and approved room controllers to change the source/position and require matching source IDs. Run `node --use-system-ca scripts/test-cloud-sheets.mjs` to verify real uploads/downloads, Master/Follower and room-free Settings imports, denied Follower source/default/deletion writes, reconnect, tombstones and administrator cleanup. It uses `MUSIC_ADMIN_PASSWORD` from the local environment and removes only its own disposable rooms, catalog entries and JPEGs. Do not put that password in a `VITE_*` variable.
 3. Run `npm run build:deploy`, then publish Hosting using the existing deployment process. Refresh all devices after release; older frontend clients do not support image sheets.
 
 No extra service or billing upgrade is introduced. Uploaded sheets consume the existing free Storage and download allowances. Saved songs remain available until deleted in **Settings > Files & songs**, which lists every song and offers **View** and **Delete**. Deletion hides the library entry immediately. Active rooms retain their current copy. On Settings refresh or room deletion, unused deleted songs have their tiles and metadata removed; this avoids interrupting active players while reclaiming storage. Cloud tombstones live under `/songs/<id>/deletedAt`; only the Settings administrator can delete/clean up, and room rules prevent selecting tombstoned songs. Apply the SELECT/DELETE administrator policies in `supabase/sheets.sql` as well as its upload policy. Adjust the Firebase project, administrator UID and Supabase public URL in the SQL/rules for other installations. Failed upload attempts can also leave unused files. Saved local files use the same deletion lifecycle; avoid clearing `.local-data/` if you want to retain the library.
