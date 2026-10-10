@@ -16,7 +16,7 @@ npm.cmd run build
 
 `test` runs Vitest unit/regression tests. `test:integration` creates its own Vite
 server on a random loopback port, a generated Settings password and a temporary
-directory containing only test data. It runs the six existing HTTP/PDF checks
+directory containing only test data. It runs seven HTTP/PDF checks
 sequentially, closes the server and removes that directory. It needs no running
 development server, credentials or cloud project and does not use your saved
 `.local-data/`. Do not set external backend environment overrides for this suite.
@@ -40,6 +40,7 @@ Paths in the Unit column are under `src/`; Integration paths are under `scripts/
 | Page navigation, first-page action and final-page anchoring | `model.test.ts` | Page-button browser checklist |
 | Master vertical scrollbar, keyboard handling and hidden Follower scrollbar | `scrollbar.test.ts` | Role/layout checklist |
 | PDF size/header and original descriptor validation | `songbook.test.ts` | `test-settings.mjs`, `test-file-library.mjs`; PDF-only replacement dialog checklist |
+| Shared room control, pending/approval/password grants, release and permissions | `shared-control.test.ts`, `rooms-control.test.ts`, `viewer-control.test.ts`, `follower-sync.test.ts`, scrollbar held-move regression | `test-shared-control.mjs`; rules-first `test-cloud-control.mjs`; shared-control checklist below |
 | Settings password, expiry, rate limiting and administrator authorization | `admin-auth.test.ts` | `test-settings.mjs`, `test-cloud-settings.mjs`; focus/lock/in-room checklist |
 | Persistent PDFs/images, default choice and original PDF replacement | `song-library.test.ts`, `songbook.test.ts`, `local-rooms.test.ts` | Settings/library checks verify new defaults and unchanged existing rooms; replacement browser checklist |
 | Screenshot overlap, stationary bars, uncertain joins and manifest limits | `stitch.test.ts` | Actual JPEG upload/download checks; stitch/crop visual checklist |
@@ -104,3 +105,17 @@ Visual layouts, native dialogs, audio output, real phone gestures and extended
 network recovery retain the acceptance checks above. Previous live-cloud release
 evidence is recorded in the README and detailed plan; cloud checks were not rerun
 for this test-only work.
+
+## Shared-control acceptance (not yet run on browsers/phones)
+
+- [ ] Create a room in one browser and join in two other browsers/phones. The owner's role stays Master; Control room is the last Follower toolbar item.
+- [ ] Check Control room; verify password input focus. Close/Cancel without action: checkbox resets and permissions stay read-only.
+- [ ] Ask for approval: dialog closes, checked box shows pending, private browsing remains available and does not move other participants. Owner sees Requests count.
+- [ ] Owner denies: pending disappears. Request again and approve: Follower becomes Controller and gets shared file selection/navigation. A second Follower stays read-only.
+- [ ] Try incorrect Settings password, then the correct one. Success grants only room control and signs Settings out; opening Settings again still requires a password.
+- [ ] Owner and controller alternate file changes, link jumps, pinches, horizontal/vertical drags and fast scrollbar drags. Both see the latest change, other following devices follow, and no idle updates/oscillation continue.
+- [ ] Hold a drag/pinch/scrollbar while receiving server echoes. Further movement still updates every viewer. Exercise competing controllers and source switches; no old-source movement leaks into the new file.
+- [ ] Uncheck pending to cancel; uncheck approved to release. Private browsing resumes existing three-second follow behavior. Re-enable using approval/password again.
+- [ ] Disconnect/reconnect, navigate away during password login or PDF load, expire/delete the room. No obsolete grants/writes/UI callbacks, stale local replay or Settings session remains. Local refresh needs a new grant; cloud refresh retains the same UID grant.
+
+Evidence for this change: 90 unit/regression tests and seven isolated local integration scripts passed; type checking and build are recorded in the implementation report. Actual Firebase control rules checks passed against production on 2026-10-10, including concurrent transactions starting with empty client caches. Real touch/UI acceptance has not yet run. `test-cloud-control.mjs` is outside CI and must run after rules deployment before publishing the dependent frontend. It tests self-grant denial, pending requests, owner denial/approval, administrator grants, concurrent sequences, source reset, revocation, stale writes and Settings/owner permission isolation. It removes its own rooms and does not modify global default/catalog/storage.

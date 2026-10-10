@@ -30,7 +30,7 @@ export class SongbookViewer {
   private generation = 0;
   private sourceRevision = 0;
   private resizeObserver: ResizeObserver;
-  onPosition?: (position: Position) => void;
+  onPosition?: (position: Position, remote?: boolean) => void;
   onPage?: (page: number) => void;
   onLinkError?: (message: string) => void;
   onInteractionStart?: () => void;
@@ -41,7 +41,7 @@ export class SongbookViewer {
       locked: () => host.classList.contains('locked') || (!this.pdf && !this.sheet),
       start: () => { this.onInteractionStart?.(); this.cancelFollow(); },
       end: () => { this.emitPosition(); this.onInteractionEnd?.(); },
-      pan: (dx, dy) => { host.scrollLeft += dx; host.scrollTop += dy; this.emitPosition(); },
+      pan: (dx, dy) => { this.cancelFollow(); host.scrollLeft += dx; host.scrollTop += dy; this.emitPosition(); },
       zoom: (factor, from, to) => this.zoomAt(this.zoom * factor, from, to)
     });
     host.addEventListener('wheel', event => {
@@ -57,7 +57,7 @@ export class SongbookViewer {
         // A following viewer must retain the Master's coordinates through resize,
         // rather than reinterpret old scroll pixels using its new viewport width.
         const position = host.classList.contains('following') ? this.sharedPosition || this.position() : this.position();
-        this.layout(); if (position) this.follow(position, true);
+        this.layout(); if (position) this.follow(position, true, this.remoteFollow);
       }
     });
     this.resizeObserver.observe(host);
@@ -210,7 +210,8 @@ export class SongbookViewer {
     if (this.settledPosition && Math.abs(this.host.scrollTop - this.settledPosition.top) > 1) this.settledPosition = undefined;
     return { ...locatePosition(tops, heights, this.host.scrollTop, this.settledPosition), zoom: this.zoom, horizontal: horizontalOffset(this.host.scrollLeft, this.host.scrollWidth, this.host.clientWidth) };
   }
-  private emitPosition() { const position = this.position(); if (position) { this.onPage?.(position.page); this.onPosition?.(position); } }
+  private remoteFollow = false;
+  private emitPosition() { const position = this.position(); if (position) { this.onPage?.(position.page); this.onPosition?.(position, this.remoteFollow); } }
   setZoom(value: number) {
     this.cancelFollow();
     const center = { x: this.host.clientWidth / 2, y: this.host.clientHeight / 2 };
@@ -225,6 +226,7 @@ export class SongbookViewer {
     }
   }
   private zoomAt(value: number, from: Point, to: Point) {
+    this.cancelFollow();
     if (!this.pages.length) return;
     const { tops, heights } = this.geometry();
     const anchor = locatePosition(tops, heights, this.host.scrollTop + from.y);
@@ -238,8 +240,9 @@ export class SongbookViewer {
     this.emitPosition();
   }
   jump(page: number) { this.follow({ page: Math.max(1, Math.min(this.count, Math.floor(page))), offset: 0, zoom: this.zoom, horizontal: this.position()?.horizontal }, true); }
-  follow(position: Position, immediate = false) {
+  follow(position: Position, immediate = false, remote = false) {
     if (!this.pages.length) return;
+    this.remoteFollow = remote;
     this.sharedPosition = { ...position };
     this.settledPosition = undefined;
     const zoom = clampZoom(position.zoom);
@@ -269,7 +272,7 @@ export class SongbookViewer {
     };
     this.frame = requestAnimationFrame(animate);
   }
-  cancelFollow() { cancelAnimationFrame(this.frame); this.target = undefined; this.sharedPosition = undefined; this.settledPosition = undefined; }
+  cancelFollow() { this.remoteFollow = false; cancelAnimationFrame(this.frame); this.target = undefined; this.sharedPosition = undefined; this.settledPosition = undefined; }
   async search(query: string): Promise<{ page: number; text: string }[]> {
     if (!this.pdf) return [];
     const matches: { page: number; text: string }[] = [];

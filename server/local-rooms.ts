@@ -33,7 +33,30 @@ export class LocalRoomStore {
     if (!this.read(code)) return null;
     const token = randomBytes(32).toString('hex'), ownerId = randomBytes(16).toString('hex');
     this.rooms.get(code)!.members.set(token, ownerId);
-    return { token };
+    return { token, memberId: ownerId };
+  }
+  canControl(code: string, token: string) { const id = this.uploader(code, token); return Boolean(id && (this.authorized(code, token) || this.read(code)?.controllers?.[id])); }
+  control(code: string, token: string, action: 'request' | 'release' | 'approve' | 'deny', id?: string) {
+    const member = this.uploader(code, token), entry = this.rooms.get(code);
+    if (!member || !entry) throw new Error('Join an active room.');
+    if (action === 'approve' || action === 'deny') {
+      if (!this.authorized(code, token)) throw new Error('Only the room owner can approve requests.');
+      if (!id || !entry.room.controlRequests?.[id]) throw new Error('Request is no longer pending.');
+      if (action === 'approve') { this.grantControl(code, id); return; }
+      delete entry.room.controlRequests![id];
+    } else {
+      entry.room.controlRequests ||= {};
+      if (action === 'request') entry.room.controlRequests[member] = true;
+      else { delete entry.room.controlRequests[member]; delete entry.room.controllers?.[member]; }
+    }
+    for (const listener of entry.listeners) listener(structuredClone(entry.room));
+  }
+  grantControl(code: string, id: string) {
+    const entry = this.rooms.get(code);
+    if (!this.read(code) || !entry || ![...entry.members.values()].includes(id)) throw new Error('Participant is no longer in this room.');
+    entry.room.controllers ||= {}; entry.room.controllers[id] = true;
+    delete entry.room.controlRequests?.[id];
+    for (const listener of entry.listeners) listener(structuredClone(entry.room));
   }
   uploader(code: string, token: string): string | undefined {
     const room = this.read(code); if (!room || !token) return;
@@ -41,7 +64,7 @@ export class LocalRoomStore {
   }
   changeSheet(code: string, token: string, value?: SharedFile, location = { page: 1, offset: 0 }): 'ok' | 'missing' | 'forbidden' | 'invalid' {
     if (!this.read(code)) return 'missing';
-    if (!this.authorized(code, token)) return 'forbidden';
+    if (!this.canControl(code, token)) return 'forbidden';
     const entry = this.rooms.get(code)!;
     let sheet: SharedFile | undefined;
     try { sheet = value !== undefined ? validateFile(value) : undefined; } catch { return 'invalid'; }
@@ -54,7 +77,7 @@ export class LocalRoomStore {
   publish(code: string, token: string, position: Position): 'ok' | 'missing' | 'forbidden' | 'invalid' {
     const entry = this.rooms.get(code);
     if (!entry || entry.room.expiresAt <= this.now()) return 'missing';
-    if (!token || token !== entry.token) return 'forbidden';
+    if (!this.canControl(code, token)) return 'forbidden';
     if ((position.sourceId || 'pdf') !== (entry.room.sheet?.id || 'pdf')) return 'invalid';
     const horizontal = position.horizontal ?? 0;
     if (!Number.isInteger(position.page) || position.page < 1 || position.page > 10000 || !Number.isFinite(position.offset) || position.offset < 0 || position.offset > 1 || !Number.isFinite(position.zoom) || position.zoom < MIN_ZOOM || position.zoom > MAX_ZOOM || !Number.isFinite(horizontal) || horizontal < 0 || horizontal > 1) return 'invalid';
@@ -156,12 +179,19 @@ export function localRoomsPlugin(env: Record<string, string> = {}): Plugin {
             const member = store.join(joinRoute[1]);
             json(res, member ? 201 : 404, member || { error: 'Room unavailable.' }); return;
           }
+          const controlRoute = /^\/api\/local-rooms\/(\d{6})\/control$/.exec(url.pathname);
+          if (controlRoute && req.method === 'POST') {
+            const input = await body(req), token = req.headers.authorization?.replace(/^Bearer /, '') || '';
+            if (!['request', 'release', 'approve', 'deny'].includes(String(input.action))) throw new Error('Invalid control action.');
+            try { store.control(controlRoute[1], token, input.action as 'request' | 'release' | 'approve' | 'deny', typeof input.memberId === 'string' ? input.memberId : undefined); json(res, 200, { ok: true }); }
+            catch (error) { json(res, 403, { error: (error as Error).message }); } return;
+          }
           const sheetRoute = /^\/api\/local-rooms\/(\d{6})\/(sheet|images|songs|pdfs)$/.exec(url.pathname);
           if (sheetRoute) {
             const code = sheetRoute[1], token = req.headers.authorization?.replace(/^Bearer /, '') || '';
             if (!store.read(code)) { json(res, 404, { error: 'Room unavailable.' }); return; }
             const ownerId = store.uploader(code, token);
-            if (!ownerId || (sheetRoute[2] === 'sheet' && !store.authorized(code, token))) { json(res, 403, { error: sheetRoute[2] === 'sheet' ? 'Only the Master may change the shared file.' : 'Join the room before uploading files.' }); return; }
+            if (!ownerId || (sheetRoute[2] === 'sheet' && !store.canControl(code, token))) { json(res, 403, { error: sheetRoute[2] === 'sheet' ? 'Only the Master may change the shared file.' : 'Join the room before uploading files.' }); return; }
             if (sheetRoute[2] === 'songs' && req.method === 'POST') {
               const song = await localSong(await body(req));
               if (store.uploader(code, token) !== ownerId) { json(res, 403, { error: 'Room session expired.' }); return; }
@@ -211,6 +241,11 @@ export function localRoomsPlugin(env: Record<string, string> = {}): Plugin {
             if (url.pathname === '/api/admin/logout' && req.method === 'POST') {
               auth.logout(req.headers.cookie); res.setHeader('Set-Cookie', 'music_admin=; HttpOnly; SameSite=Strict; Path=/api/admin; Max-Age=0'); json(res, 200, { ok: true }); return;
             }
+            const grantRoute = /^\/api\/admin\/rooms\/(\d{6})\/control$/.exec(url.pathname);
+            if (grantRoute && req.method === 'POST') {
+              const input = await body(req); if (typeof input.memberId !== 'string') throw new Error('Missing participant.');
+              store.grantControl(grantRoute[1], input.memberId); json(res, 200, { ok: true }); return;
+            }
             if (url.pathname === '/api/admin/rooms' && req.method === 'GET') { json(res, 200, store.list()); return; }
             const target = /^\/api\/admin\/rooms(?:\/(\d{6}))?$/.exec(url.pathname);
             if (target && req.method === 'DELETE') {
@@ -251,7 +286,7 @@ export function localRoomsPlugin(env: Record<string, string> = {}): Plugin {
           if (req.method === 'PATCH' && !match[2]) {
             const input = await body(req);
             const result = store.publish(code, req.headers.authorization?.replace(/^Bearer /, '') || '', input as unknown as Position);
-            json(res, { ok: 200, missing: 404, forbidden: 403, invalid: 400 }[result], result === 'ok' ? { ok: true } : { error: result === 'forbidden' ? 'Only the Master may control this room.' : result }); return;
+            json(res, { ok: 200, missing: 404, forbidden: 403, invalid: 400 }[result], result === 'ok' ? { ok: true } : { error: result === 'forbidden' ? 'Only the owner or an approved controller may control this room.' : result }); return;
           }
           json(res, 405, { error: 'Method not allowed.' });
         })().catch(error => { if (!res.headersSent) json(res, 400, { error: error instanceof Error ? error.message : 'Invalid request.' }); else res.end(); });

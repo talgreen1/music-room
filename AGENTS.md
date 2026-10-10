@@ -27,15 +27,20 @@ for architecture, [DETAILED_PLAN.md](DETAILED_PLAN.md) for stories, and
 
 - Mobile browser app for musicians; Android/iPhone users need no native app or
   musician account. Keep the dark UI compact and prioritize document view space.
-- Room creators are **Masters**; joiners are **Followers**. Only the Master may
+- Room creators are **Masters**; joiners are **Followers**. The Master and explicitly approved room controllers may
   change the shared source, page, zoom or scroll position. Enforce this in the
   backend, not just by hiding controls.
 - Followers may upload PDFs/images from an active room and preview library files
   privately. Uploading must not change the shared view. Files persist for everyone
-  and future rooms; the Master chooses which file to display.
+  and future rooms; the Master or an approved controller chooses which file to display.
 - Follower interaction pauses Master sync for three seconds after interaction ends.
   Further interaction restarts the delay. Manual opt-out persists until explicitly
   checked again. Do not return while a drag/pinch is still held.
+- Followers request room control or use the Settings password via a separate,
+  temporary Settings session. Pending requests grant no writes. Only the owner
+  approves room requests; controllers cannot grant others or acquire Settings
+  management rights. Unchecking releases control. Avoid rebroadcasting received
+  positions; sequence concurrent writes monotonically and switch sources atomically.
 - Only the separately authenticated Settings administrator may manage the global
   default, delete files/rooms or replace the original songbook. Never expose the
   administrator session/token to the room's musician identity.
@@ -90,7 +95,7 @@ for architecture, [DETAILED_PLAN.md](DETAILED_PLAN.md) for stories, and
   or requiring a credit card without an explicit user decision.
 - `database.rules.json` is the cloud authorization/schema boundary. Storage SQL
   policies in `supabase/` scope immutable inserts to the uploader UID and deletion
-  to Settings. Local join tokens grant upload-only access; cloud catalog creation
+  to Settings. Local join tokens initially grant upload-only access; owner/admin approval grants room control; cloud catalog creation
   requires an authenticated uploader's own namespace plus an active room code.
   Do not claim stronger invitation/membership authorization than implemented.
 - `server/local-rooms.ts` is Vite-only HTTP/SSE middleware; `server/song-library.ts`
@@ -122,7 +127,7 @@ npm.cmd run build
   configuration is absent. Phones use the computer's current LAN URL printed by
   Vite, not phone `localhost`. Do not hardcode a changing LAN IP in documentation.
 - `test:integration` starts its own isolated loopback server with generated
-  credentials and temporary storage, runs six local HTTP/PDF checks and cleans up.
+  credentials and temporary storage, runs seven local HTTP/PDF checks and cleans up.
   It must never target cloud services or use the user's `.local-data/`.
 - GitHub Actions runs type checking, unit tests, isolated integration and build.
   Prefer regression assertions about observable behavior over implementation mirrors.

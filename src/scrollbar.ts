@@ -8,6 +8,7 @@ export class PdfScrollbar {
   private drag?: { id: number; grab: number };
   onInteractionStart?: () => void;
   onInteractionEnd?: () => void;
+  onScroll?: () => void;
   constructor(private host: HTMLElement) {
     this.element.className = 'pdf-scrollbar'; this.thumb.className = 'pdf-scrollbar-thumb';
     this.element.append(this.thumb);
@@ -58,6 +59,7 @@ export class PdfScrollbar {
     this.setEnabled(false);
   }
   private move(top: number) {
+    this.onScroll?.();
     const travel = this.element.clientHeight - this.thumb.offsetHeight;
     const percent = Math.max(0, Math.min(1, top / Math.max(1, travel)));
     this.host.scrollTop = percent * Math.max(0, this.host.scrollHeight - this.host.clientHeight);

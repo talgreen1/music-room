@@ -393,3 +393,15 @@ Release evidence (2026-10-08): user confirmed Follower uploads locally. All 67 t
 Use focused automated tests for coordinate math, throttling/coalescing, stale-message handling, and recovery state transitions. Use Firebase emulator tests for the authorization boundary and concurrent room creation. Use browser tests for the create/join/view/follow flows, and manual physical-device tests for scrolling, memory, orientation, and mobile background behavior.
 
 Do not treat a successful build or local BroadcastChannel demo as proof of cross-device reliability. Completion evidence should state what was tested and its limits. Any newly discovered defect gets a story or remains an explicit blocker to the relevant gate.
+
+## Shared room control
+
+- [x] Add room-scoped controller/request maps while preserving legacy rooms.
+- [x] Enforce owner/controller editing in local backend and cloud rules; preserve Settings-only management.
+- [x] Add last-position Follower Control room checkbox and Settings-password/request dialog.
+- [x] Show pending inline without granting control; support cancellation and release.
+- [x] Let the owner approve/deny pending requests from a live request list.
+- [x] Support shared source selection and drag/zoom with server sequencing and no remote-update feedback loops.
+- [x] Add local unit/HTTP regression tests and document architecture, permissions and acceptance checks.
+- [ ] Run Android/iPhone and multi-browser approval, password, held-gesture and simultaneous-controller acceptance.
+- [x] Deploy changed Database rules and run actual cloud control permission checks before Hosting (2026-10-10).

@@ -39,7 +39,7 @@ export function showSongLibrary(service: RoomService, pdfTitle: string, options:
       if (!quiet || catalog !== lastCatalog) {
         lastCatalog = catalog; list.replaceChildren(); button(`PDF · ${pdfTitle}`); songs.forEach(song => button(`${isPdfFile(song) ? 'PDF' : 'Images'} | ${song.title}`, song));
       }
-      status.textContent = songs.length ? options.viewOnly ? 'View a file privately. The Master controls the shared view.' : 'Select a source for everyone in the room.' : 'No saved songs yet. Upload a PDF or screenshots to add one.';
+      status.textContent = songs.length ? options.viewOnly ? 'View a file privately. The Master and approved controllers control the shared view.' : 'Select a source for everyone in the room.' : 'No saved songs yet. Upload a PDF or screenshots to add one.';
     } catch (error) { if (alive) status.textContent = error instanceof Error ? error.message : 'Could not load songs.'; }
     finally { busy = false; if (alive) { refresh.disabled = false; list.querySelectorAll('button').forEach(button => button.disabled = false); } }
   };

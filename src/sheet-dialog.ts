@@ -28,7 +28,7 @@ export function showSheetDialog(service: ScreenshotDestination, initialFiles?: F
   }
   if (options.roomContribution) {
     publish.textContent = 'Add to room library';
-    const hint = document.createElement('p'); hint.textContent = 'Everyone can view this file in the library. The Master chooses what is displayed for the room.';
+    const hint = document.createElement('p'); hint.textContent = 'Everyone can view this file in the library. The Master or an approved controller chooses what is displayed for the room.';
     get('.sheet-actions').before(hint);
   }
   let pdf: File | undefined;

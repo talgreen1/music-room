@@ -30,7 +30,7 @@ try {
   const address = server.httpServer.address();
   if (!address || typeof address === 'string') throw new Error('No local test port.');
   const env = { ...process.env, MUSIC_ADMIN_PASSWORD: password, MUSIC_ROOM_TEST_URL: `http://127.0.0.1:${address.port}` };
-  for (const script of ['test-local-server.mjs', 'test-settings.mjs', 'test-file-library.mjs', 'test-room-files.mjs', 'test-follower-uploads.mjs', 'test-pdf-compat.mjs']) {
+  for (const script of ['test-local-server.mjs', 'test-settings.mjs', 'test-file-library.mjs', 'test-room-files.mjs', 'test-follower-uploads.mjs', 'test-shared-control.mjs', 'test-pdf-compat.mjs']) {
     console.log(`Checking ${script}`);
     await run(script, env);
   }

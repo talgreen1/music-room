@@ -5,6 +5,8 @@ export class FollowerSync {
   private timer?: ReturnType<typeof setTimeout>;
   private destroyed = false;
   constructor(private change: (following: boolean) => void, private resume: () => void) {}
+  /** Role changes discard gestures/timers from the previous control mode. */
+  reset(checked: boolean) { this.active = 0; this.setManual(checked); }
   setManual(checked: boolean) {
     if (this.destroyed) return;
     clearTimeout(this.timer); this.manualPause = !checked;

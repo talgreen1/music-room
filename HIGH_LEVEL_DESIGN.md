@@ -4,7 +4,7 @@ Status: initial design, 2026-10-02. Implementation progress is tracked in [DETAI
 
 ## 1. Purpose and priorities
 
-Music Room is a mobile-first browser app for musicians who need to read the same songbook together. One person, the **Master**, controls the shared reading position. **Followers** follow that position or temporarily explore independently.
+Music Room is a mobile-first browser app for musicians who need to read the same songbook together. The room owner, the **Master**, and explicitly approved Follower controllers can control the shared reading position. **Followers** follow that position or temporarily explore independently.
 
 The app runs in Android Chrome and iPhone Safari without installation or a visible login. Priorities, in order: reliable room creation/joining, reliable synchronization, smooth scrolling, mobile usability, automatic reconnection, and a clean interface.
 
@@ -16,7 +16,7 @@ Version 1 includes:
 
 - Create a room with a short numeric code; join by code or link.
 - A single configured songbook, rendered independently on every device with PDF.js.
-- Master-only updates to shared page, position within that page, and practical zoom synchronization.
+- Owner/approved-controller updates to shared page, position within that page, and practical zoom synchronization.
 - Master sync checkbox with temporary browsing pauses and persistent manual opt-out.
 - Vertical scrolling, page navigation, page jump, zoom, and text search where the PDF supports it.
 - Share link/QR code, mobile viewing, connection status, and reconnect behavior.
@@ -140,7 +140,7 @@ Choosing a different file as Master atomically updates its manifest and initial 
 
 Use a quiet dark background, high-contrast text, and the original light PDF pages as the focus. Home shows Create Room and Join Room. An active room has a compact header for code, role, sharing, and connection status, with the viewer occupying the remaining screen.
 
-Use compact 32 CSS px header/toolbar controls as requested to maximize PDF space, while preserving accessible labels, keyboard support, safe-area insets, and portrait/landscape layouts. Followers have Master sync as their first bottom-toolbar element with page/zoom readouts and no vertical scrollbar. The Master sees **You are the Master**, the draggable scrollbar, and the navigation/sharing controls. There is no separate Follower button row.
+Use compact 32 CSS px header/toolbar controls as requested to maximize PDF space, while preserving accessible labels, keyboard support, safe-area insets, and portrait/landscape layouts. Followers have Master sync as their first bottom-toolbar element with page/zoom readouts and no vertical scrollbar. The Master sees **Master**, the draggable scrollbar, and the navigation/sharing controls. There is no separate Follower button row.
 
 Page/zoom/search controls can live in a compact bottom toolbar or simple sheet. Browser fullscreen is progressive enhancement: provide a usable expanded viewer when the browser cannot offer fullscreen. Keep Hebrew PDF content intact; UI localization can follow separately.
 
@@ -148,7 +148,7 @@ Page/zoom/search controls can live in a compact bottom toolbar or simple sheet. 
 
 Display Connected, Reconnecting, or Offline based on database connection state and browser network events. Anonymous authentication, missing room, expiry, permission denial, and PDF-loading failures need actionable messages and retry/leave paths.
 
-While disconnected, keep the loaded PDF readable and allow local browsing. Stop accumulating shared writes. On reconnect, a following device reads and snaps to the current shared state; a browsing follower stays where it is. The Master sends its latest local position once connected, rather than replaying old positions. Handle mobile background/foreground transitions explicitly.
+While disconnected, keep the loaded PDF readable and allow local browsing. Stop accumulating shared writes. On reconnect, a following device reads and snaps to the current shared state; a browsing follower stays where it is. Owners and controllers resynchronize to the latest server position on reconnect rather than replaying stale local positions. Handle mobile background/foreground transitions explicitly.
 
 Master presence is distinct from a follower's own connection status. If a Master-online indicator is added, use connection-aware presence; an unchanged position alone does not mean the Master is disconnected.
 
@@ -189,7 +189,7 @@ The app runs locally and is deployed on Firebase Hosting with the supplied PDF. 
 
 ## Screenshot source extension (2026-10-05)
 
-A room can also display a static sheet assembled from the Master's screenshots. Matching and JPEG export happen in the browser; Supabase stores the images, while Firebase distributes a manifest and the existing normalized zoom/two-axis position. The viewer renders only nearby tiles as one continuous sheet. Master-only atomic source switches stamp a source ID onto positions, preventing stale PDF updates from moving the image sheet. Local development provides the same upload/sync flow through Vite and ignored local files. The original PDF remains available through the Master toolbar.
+A room can also display a static sheet assembled from the Master's screenshots. Matching and JPEG export happen in the browser; Supabase stores the images, while Firebase distributes a manifest and the existing normalized zoom/two-axis position. The viewer renders only nearby tiles as one continuous sheet. Owner/approved-controller atomic source switches stamp a source ID onto positions, preventing stale PDF updates from moving the image sheet. Local development provides the same upload/sync flow through Vite and ignored local files. The original PDF remains available through the Master toolbar.
 
 This captures the key chosen on the external website. It does not manipulate or transpose the captured chords. No paid remote browser or phone installation is required. Cloud upload, source synchronization, reconnection and administrator cleanup were verified before publication on 2026-10-05. Implementation and remaining physical-phone verification are tracked in [WEBSITE_CASTING_DESIGN.md](WEBSITE_CASTING_DESIGN.md).
 
@@ -201,8 +201,18 @@ Room deletion now carries an explicit keep/delete-files policy, defaulting to ke
 
 Every upload is a shared file with a stable 32-character ID and title. A PDF file contains an immutable URL; an image song contains the existing stitched JPEG segment manifest. Both upload entry points use the same optional-name dialog and save into the persistent catalog before a room switches source. PDFs render with PDF.js and keep page navigation/links; image songs retain the continuous tiled viewer and existing synchronization gestures.
 
-The Settings administrator chooses a global default file ID. Room creation copies that catalog entry into the room and stamps the same ID onto the initial position. Existing rooms never change when the default changes. The original songbook descriptor remains a permanent fallback, represented by default ID `pdf`. Masters and Followers can upload/register their own files from an active room. Only the Master selects the shared source; Followers can preview files privately. Only Settings administrators may write the default or delete records. Rules reject deleting/tombstoning the current default.
+The Settings administrator chooses a global default file ID. Room creation copies that catalog entry into the room and stamps the same ID onto the initial position. Existing rooms never change when the default changes. The original songbook descriptor remains a permanent fallback, represented by default ID `pdf`. Masters and Followers can upload/register their own files from an active room. The Master and approved controllers select the shared source; Followers can preview files privately. Only Settings administrators may write the default or delete records. Rules reject deleting/tombstoning the current default.
 
 Local files/catalog/default are durable under ignored `.local-data/`. Version-2 catalog writes persist files and default in one atomic document and migrate the earlier image-only map. Cloud metadata uses the existing `songs` catalog plus `defaultFile`; room `sheet` accepts either PDF URL or image segments. New PDFs use public Supabase bucket `room-pdfs`, with immutable uploads scoped to Firebase UID/file ID and Settings-only deletion. Existing `songbooks` URLs and screenshot records remain compatible. Apply `supabase/files.sql` and new Firebase rules before publishing this release.
 
 Tombstones immediately remove deleted files from selection. Active rooms keep their manifest and stored bytes until they switch away/expire; Settings refresh or room deletion collects unreferenced PDFs/images. PDF header/30 MB checks occur on upload; screenshot stitching and bounded tiles retain their current limits. No additional paid service is introduced.
+
+## Shared room control (2026-10-10)
+
+Rooms now optionally contain `controllers: { [participantId]: true }` and `controlRequests: { [participantId]: true }`. Omitted maps preserve compatibility. Firebase uses anonymous UIDs; the local backend uses random participant IDs bound to bearer join tokens. Only an active room owner or a separately authenticated Settings administrator grants control. Owner grants require a pending request; Settings password grants can be direct. A participant may create/cancel their own request or release their own grant. Controllers cannot approve others. Shared page/source writes accept owner or controller identities and retain existing expiry, schema, catalog and source-ID validation. Settings/default/deletion permissions are unchanged.
+
+`control-dialog.ts` owns password and request dialogs plus the live owner approval list. Password authorization uses `SettingsService`, never the room's authentication context, and signs out afterward, including errors/navigation. The bottom Control room checkbox shows pending until granted, and releases access when unchecked. Role ownership remains separate from editing capability.
+
+Every editor also subscribes to shared positions. Viewer callbacks mark received/programmatic scroll updates as remote; publishing ignores them to avoid feedback loops. A new pan, pinch or scrollbar movement restores local publishing, even while a held gesture receives its own server echo. Cloud position transactions assign the next server sequence under contention. Source selection updates manifest and destination atomically, with bounded retry for concurrent sequence rejection. Local writes are serialized synchronously by the room store. The latest accepted edit wins; there is no edit lock or ownership transfer.
+
+Local grants end with the join session (reload creates a new join); cloud grants remain attached to anonymous UID until released or room expiry. This changes Database rules and requires rules-first release plus the actual-service `test-cloud-control.mjs` permission check before Hosting. No new paid service or Storage policy is needed.

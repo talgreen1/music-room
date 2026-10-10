@@ -33,6 +33,14 @@ function setup() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('PDF fast scrollbar', () => {
+  it('marks every held-drag move local even after an incoming shared position', () => {
+    const t = setup(); t.scrollbar.setEnabled(true);
+    const local = vi.fn(); t.scrollbar.onScroll = local;
+    t.pointer('pointerdown', 35); t.host.scrollTop = 1000;
+    t.pointer('pointermove', 250); t.pointer('pointermove', 485);
+    expect(local).toHaveBeenCalledTimes(3); expect(t.host.scrollTop).toBe(4500);
+    t.scrollbar.destroy();
+  });
   it('drags through the whole document and preserves the grab offset', () => {
     const t = setup(); t.scrollbar.setEnabled(true);
     t.pointer('pointerdown', 35); t.pointer('pointermove', 485);

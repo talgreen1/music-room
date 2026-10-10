@@ -27,6 +27,8 @@ export class RoomService {
   private initialized = false;
   private activeRoom = false;
   private uploadToken = '';
+  private memberId = '';
+  private controlling = false;
   private onRoom?: (room: Room | null) => void;
   async init() {
     if (this.initialized) return;
@@ -106,6 +108,7 @@ export class RoomService {
       this.sequence = Math.max(this.sequence, room?.position.sequence || 0);
       if (room?.masterId !== this.uid) this.master = false;
       this.activeRoom = Boolean(room && room.expiresAt > Date.now() + this.serverOffset);
+      this.controlling = Boolean(this.activeRoom && room?.controllers?.[this.memberId || this.uid]);
       onRoom(this.activeRoom ? room : null);
     };
     const offline = () => onConnection('Offline');
@@ -140,6 +143,7 @@ export class RoomService {
             if (!joined.ok) throw new Error('Could not join the room.');
             const member = await joined.json(); if (!live) return;
             this.uploadToken = member.token;
+            this.memberId = member.memberId;
           }
           handle(payload);
           if (!live) return;
@@ -166,13 +170,35 @@ export class RoomService {
     }
   }
   isMaster(room: Room) { return this.master && room.masterId === this.uid; }
+  canControl() { return this.activeRoom && (this.master || this.controlling); }
+  participantId() { return this.memberId || this.uid; }
+  roomCode() { return this.code; }
+  async control(action: 'request' | 'release' | 'approve' | 'deny', memberId = this.participantId()) {
+    const code = this.code; if (!code || !this.activeRoom || !navigator.onLine) throw new Error('Connect to an active room.');
+    if (localServerConfigured) {
+      const response = await fetch(`/api/local-rooms/${code}/control`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.uploadToken}` }, body: JSON.stringify({ action, memberId }) });
+      if (!response.ok) throw new Error((await response.json()).error || 'Could not update control access.');
+    } else if (this.db) {
+      if (action === 'approve') await update(ref(this.db, `rooms/${code}`), { [`controllers/${memberId}`]: true, [`controlRequests/${memberId}`]: null });
+      else if (action === 'deny') await set(ref(this.db, `rooms/${code}/controlRequests/${memberId}`), null);
+      else if (action === 'request') await set(ref(this.db, `rooms/${code}/controlRequests/${this.uid}`), true);
+      else await update(ref(this.db, `rooms/${code}`), { [`controllers/${this.uid}`]: null, [`controlRequests/${this.uid}`]: null });
+    } else throw new Error('Shared control requires the local server or Firebase.');
+  }
   async publish(position: Position) {
-    if (!this.master || !this.code || !this.connected || !navigator.onLine) return;
+    if (!this.canControl() || !this.code || !this.connected || !navigator.onLine) return;
     if (position.sourceId && position.sourceId !== this.sourceId) return;
+    const knownSequence = this.sequence;
     const value = { ...normalizePosition(position), sourceId: position.sourceId || this.sourceId, sequence: ++this.sequence, updatedAt: Date.now() + this.serverOffset };
-    if (this.db) await set(ref(this.db, `rooms/${this.code}/position`), { ...value, updatedAt: serverTimestamp() });
+    if (this.db) await runTransaction(ref(this.db, `rooms/${this.code}/position`), current => {
+      // Firebase may first call a transaction with null when its local cache is empty.
+      // Seed from the subscribed sequence; the server retries against its actual state.
+      current ||= { sourceId: value.sourceId, sequence: knownSequence };
+      if ((current.sourceId || 'pdf') !== value.sourceId) return;
+      return { ...value, sequence: (current.sequence || 0) + 1, updatedAt: serverTimestamp() };
+    }, { applyLocally: false });
     else if (localServerConfigured) {
-      const token = sessionStorage.getItem(`music-master-token:${this.code}`);
+      const token = this.uploadToken;
       if (!token) throw new Error('Master session is missing. Create a new room.');
       const response = await fetch(`/api/local-rooms/${this.code}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(value) });
       if (!response.ok) throw new Error((await response.json()).error || 'Could not update the local room.');
@@ -207,15 +233,22 @@ export class RoomService {
   }
   async changeSheet(sheet?: SharedFile, location = { page: 1, offset: 0 }) {
     if (!Number.isInteger(location.page) || location.page < 1 || location.page > 10000 || !Number.isFinite(location.offset) || location.offset < 0 || location.offset > 1) throw new Error('Invalid search location.');
-    if (!this.master || !this.code || !this.connected || !navigator.onLine) throw new Error('Connect as the Master before sharing a sheet.');
+    if (!this.canControl() || !this.code || !this.connected || !navigator.onLine) throw new Error('Room control permission is required.');
     const targetCode = this.code;
     let value = sheet ? validateFile(sheet) : undefined;
     if (value && this.db) { const saved = (await get(ref(this.db, `songs/${value.id}`))).val() as SavedSong | null; if (!saved || saved.deletedAt !== undefined) throw new Error('This song is no longer in the library.'); value = validateFile(saved); }
-    if (this.code !== targetCode || !this.master || !this.connected) throw new Error('Room changed. Select the song in the current room.');
+    if (this.code !== targetCode || !this.canControl() || !this.connected) throw new Error('Room changed. Select the song in the current room.');
     const position: Position = { page: location.page, offset: location.offset, zoom: 1, horizontal: 0, sourceId: value?.id || 'pdf', sequence: ++this.sequence, updatedAt: Date.now() + this.serverOffset };
-    if (this.db) await update(ref(this.db, `rooms/${this.code}`), { sheet: value || null, position: { ...position, updatedAt: serverTimestamp() } });
+    if (this.db) {
+      for (let attempt = 0; ; attempt++) {
+        const latest = (await get(ref(this.db, `rooms/${targetCode}`))).val() as Room | null;
+        if (!latest || latest.expiresAt <= Date.now() + this.serverOffset || this.code !== targetCode || !this.canControl()) throw new Error('Room control session ended.');
+        try { await update(ref(this.db, `rooms/${targetCode}`), { sheet: value || null, position: { ...position, sequence: (latest.position.sequence || 0) + 1, updatedAt: serverTimestamp() } }); break; }
+        catch (error) { if (attempt >= 2 || !/permission.denied/i.test(String(error))) throw error; }
+      }
+    }
     else if (localServerConfigured) {
-      const response = await fetch(`/api/local-rooms/${this.code}/sheet`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionStorage.getItem(`music-master-token:${this.code}`)}` }, body: JSON.stringify({ sheet: value || null, location }) });
+      const response = await fetch(`/api/local-rooms/${this.code}/sheet`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.uploadToken}` }, body: JSON.stringify({ sheet: value || null, location }) });
       if (!response.ok) throw new Error((await response.json()).error || 'Could not share the sheet.');
     } else {
       const room = this.localRead(this.code); if (!room || room.masterId !== this.uid) throw new Error('Room unavailable.');
@@ -249,5 +282,5 @@ export class RoomService {
   private requireUploadRoom() {
     if (!this.code || !this.activeRoom || !navigator.onLine) throw new Error('Join an active room before uploading files.');
   }
-  leave() { this.cleanups.forEach(fn => fn()); this.cleanups = []; this.channel?.close(); this.channel = undefined; this.onRoom = undefined; this.master = false; this.activeRoom = false; this.uploadToken = ''; this.connected = false; this.sequence = 0; this.code = ''; }
+  leave() { this.cleanups.forEach(fn => fn()); this.cleanups = []; this.channel?.close(); this.channel = undefined; this.onRoom = undefined; this.master = false; this.activeRoom = false; this.controlling = false; this.memberId = ''; this.uploadToken = ''; this.connected = false; this.sequence = 0; this.code = ''; }
 }
