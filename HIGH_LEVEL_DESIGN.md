@@ -17,7 +17,7 @@ Version 1 includes:
 - Create a room with a short numeric code; join by code or link.
 - A single configured songbook, rendered independently on every device with PDF.js.
 - Owner/approved-controller updates to shared page, position within that page, and practical zoom synchronization.
-- Master sync checkbox with temporary browsing pauses and persistent manual opt-out.
+- Master sync checkbox with default locked following and explicit private browsing opt-out.
 - Vertical scrolling, page navigation, page jump, zoom, and text search where the PDF supports it.
 - Share link/QR code, mobile viewing, connection status, and reconnect behavior.
 - Configuration and deployment instructions for static hosting and Firebase Realtime Database. Initial deployment uses Firebase Hosting with the existing CLI account; Cloudflare Pages remains an alternative.
@@ -124,7 +124,7 @@ Target observed latency is tens to a few hundred milliseconds on a healthy conne
 
 ### Follow mode
 
-Followers start with Master sync checked. PDF/scrollbar interaction immediately pauses local following and unchecks the checkbox; three seconds after all interaction ends, return to the latest Master position and check it again. Further activity resets the delay. Manual opt-out cancels the timer and remains off until the user checks the checkbox, which resumes immediately. Retain incoming Master state throughout the pause. Use explicit interaction events rather than scroll events so incoming Master updates never start a browsing timeout. Cancel pending timers when leaving or losing the room.
+Followers without control permission start with Master sync checked and document interaction locked. The existing viewer lock blocks touch drag/pinch, wheel/keyboard scrolling and internal links while allowing programmatic incoming positions. Explicitly unchecking enables private browsing; no interaction automatically unchecks the box or resumes sync. Rechecking returns immediately to the latest room position and locks again. Masters and approved controllers stay interactive. The shared interaction policy is in `follower-sync.ts`, applied by the room coordinator. Backend write permissions remain unchanged.
 
 ## 7. PDF performance and search
 
@@ -134,7 +134,7 @@ Load the PDF once per device/session and use HTTP caching across sessions. Realt
 
 Search uses extracted PDF text, including Hebrew when available, and file titles/original upload names. Global search covers the original songbook and live shared catalog; local search covers the current manifest. PDF.js extracts one document at a time, reports page progress, and supports cancellation. Completed text/coordinate indexes are cached per URL in IndexedDB for 24 hours with a 20-document cap; failures fall back to extraction. Results use textContent and carry a physical page/normalized offset. Internal index links resolve to the song destination. No OCR or image-text search is included. Text highlighting and a curated song index are optional later additions.
 
-Choosing a different file as Master atomically updates its manifest and initial search destination, avoiding an intermediate page-1 broadcast. Selecting within the current file publishes through the existing position synchronizer. Followers retain the existing temporary browse/manual-sync behavior; other-file results open private previews. Home/Settings search opens previews. Optional `fileNames` metadata is validated in the local model and Firebase rules; legacy records remain valid.
+Choosing a different file as Master atomically updates its manifest and initial search destination, avoiding an intermediate page-1 broadcast. Selecting within the current file publishes through the existing position synchronizer. Followers retain the explicit Master sync opt-out behavior; other-file results open private previews. Home/Settings search opens previews. Optional `fileNames` metadata is validated in the local model and Firebase rules; legacy records remain valid.
 
 ## 8. Interface
 

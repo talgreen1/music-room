@@ -12,7 +12,7 @@ This guide includes the shared room control feature, updated on 2026-10-10.
 | --- | --- |
 | Rooms | Six-digit codes, 24-hour lifetime, no musician login, invitation links and QR codes. |
 | Master | Controls the displayed file, page, zoom and both scroll axes. Compact header shows Master and a larger room code. |
-| Followers | Manual browsing pauses sync for three seconds; manual sync opt-out persists until checked again. No Master navigation buttons, search icon or vertical scrollbar. |
+| Followers | Master sync is checked by default and locks document interaction; uncheck it to browse privately until explicitly checked again. No Master navigation buttons, search icon or vertical scrollbar. |
 | Viewer | PDF.js rendering, internal PDF links, document-only pinch/trackpad zoom, two-axis dragging, RTL alignment and Master fast-scroll/page controls. |
 | Library | Persistent PDFs and automatically stitched screenshots. Masters, Followers and Settings administrators can add files; the Master or an approved controller selects the shared view. |
 | Shared control | Followers enable Control room with the Settings password or owner approval. Requests show pending; approved controllers select files and drag/zoom alongside the owner. |
@@ -153,11 +153,11 @@ The room is stored under `rooms/<code>` with this shape:
 
 The viewer converts Master scrolling into these coordinates. `PositionPublisher` in `src/sync.ts` throttles ordinary scroll updates to approximately 15 per second, allows only one write in flight, and replaces pending updates with the newest position. Page jumps request an immediate update. Followers interpolate toward the latest target using `requestAnimationFrame`; initial joins and large jumps snap to the target. The UI ignores stale sequences and retains the latest room state while the PDF loads.
 
-Followers start with **Master sync** checked as the first element of their bottom toolbar. Scrolling, dragging, pinching, or opening PDF links temporarily unchecks it. Three seconds after the interaction ends, it checks itself and returns to the latest Master position. Further activity restarts the delay; a held drag never returns mid-gesture. Manually unchecking the checkbox keeps sync off until it is manually checked again, which returns immediately. Incoming updates always retain the Master's latest position. Follower navigation never publishes shared state.
+Followers start with **Master sync** checked as the first element of their bottom toolbar. While checked, Followers without shared-control permission cannot drag, scroll, pinch/zoom or navigate internal PDF links in the shared viewer. Uncheck it to browse privately; it stays off until explicitly checked again. Rechecking immediately returns to the latest shared position and locks interaction again. Incoming updates retain the latest room position throughout private browsing. Follower navigation never publishes shared state. Masters and approved controllers remain interactive because they control the shared view.
 
 Pinch inside the PDF to zoom around your fingers; drag with one finger or the primary mouse button to pan horizontally and vertically. Desktop trackpad pinch/Ctrl+wheel also changes document zoom. Gestures are handled within the PDF area, with native touch zoom disabled there; the app does not globally disable browser zoom. Existing canvases scale during a gesture and refresh their resolution after zoom settles. Followers can begin browsing directly; the local sync controller pauses automatic movement during their interaction.
 
-Tap or click the songbook's embedded internal links to open the referenced PDF page. Link regions scale with document zoom and use the PDF's destination coordinates, including named destinations and page object references. Navigation preserves the current document zoom and aligns to the right edge by default for the RTL songbook. The Master has an **RTL orientation** checkbox, checked by default; uncheck it for left-edge alignment. Changing the checkbox also aligns the current view. The resulting horizontal position and link navigation synchronize through the existing room position updates. Follower link navigation temporarily pauses Master sync, then restores the shared view after three seconds unless sync was manually unchecked. These links navigate inside the loaded PDF rather than opening another browser page.
+Tap or click the songbook's embedded internal links to open the referenced PDF page. Link regions scale with document zoom and use the PDF's destination coordinates, including named destinations and page object references. Navigation preserves the current document zoom and aligns to the right edge by default for the RTL songbook. The Master has an **RTL orientation** checkbox, checked by default; uncheck it for left-edge alignment. Changing the checkbox also aligns the current view. The resulting horizontal position and link navigation synchronize through the existing room position updates. Followers must uncheck Master sync before navigating links privately; checking it again returns to the shared view. These links navigate inside the loaded PDF rather than opening another browser page.
 
 The Master's RTL checkbox sits in the hamburger menu in the upper bar, checked by default. The lower bar keeps page navigation and an upward arrow to jump to page 1. Zoom with a pinch on the document; the Master has no zoom buttons or percentage in the lower bar.
 
@@ -398,7 +398,7 @@ firebase.cmd deploy --only hosting --project talgreen-music-room
 
 Hosting automatically runs `build:deploy` before uploading `dist/`. This build refuses incomplete Firebase configuration and emulator mode, so it cannot silently publish the browser-only demo. `firebase.json` configures direct-link rewrites, immutable caching for generated assets, one-day PDF caching, and HTML revalidation. On systems without the `.cmd` wrappers, use `npm` and `firebase`.
 
-After deployment, open the live site, create a fresh room, and join from a separate browser or phone. Check the PDF, connected status, scrolling/page jumps, temporary browsing, automatic return, and manual Master sync opt-out/rechecking. Local development room codes belong to the local server; create a new room on the deployed site for internet use.
+After deployment, open the live site, create a fresh room, and join from a separate browser or phone. Check the PDF, connected status, scrolling/page jumps, locked synced Followers and explicit Master sync opt-out/rechecking. Local development room codes belong to the local server; create a new room on the deployed site for internet use.
 
 ### Publish database rules or authentication changes
 
@@ -469,7 +469,7 @@ Supabase's Free plan has storage/download limits and projects can pause after in
 - Create/join by six-digit code; share link and QR.
 - Master scrolls and navigates; Followers initially follow automatically.
 - Pinch the PDF to zoom; drag to pan horizontally and vertically. The Master shares zoom and both scroll axes.
-- Follower browsing temporarily unchecks Master sync and returns after three seconds of inactivity.
+- Synced Followers cannot drag or zoom; explicitly uncheck Master sync to browse privately.
 - Manually uncheck Master sync to keep browsing independently; check it to return immediately.
 - Page numbers refer to physical PDF pages, not printed songbook numbering.
 - Compact Follower controls show Master sync and page/zoom readouts. The Master has page navigation in the lower bar and a hamburger menu for song selection, screenshot imports, Settings and RTL.
@@ -506,7 +506,7 @@ Cloud catalog creation accepts an anonymous authenticated participant's own uplo
 
 ### Local testing
 
-Run `npm run dev`, create a room and upload screenshots. Open its link from another browser or a phone on the same Wi-Fi using the network address printed by Vite, for example `http://YOUR-COMPUTER-IP:5173/?room=123456`. Uploaded JPEGs persist in ignored `.local-data/sheets/`; the reusable catalog persists in `.local-data/songs.json` across server restarts. Rooms still reset on server restart. Verify zoom, horizontal/vertical dragging, Follower's three-second return, manual Master sync opt-out, late joining, and returning to PDF. `node scripts/test-local-server.mjs` checks HTTP authorization, sheet switching, stale positions and reconnect snapshots.
+Run `npm run dev`, create a room and upload screenshots. Open its link from another browser or a phone on the same Wi-Fi using the network address printed by Vite, for example `http://YOUR-COMPUTER-IP:5173/?room=123456`. Uploaded JPEGs persist in ignored `.local-data/sheets/`; the reusable catalog persists in `.local-data/songs.json` across server restarts. Rooms still reset on server restart. Verify zoom, horizontal/vertical dragging, Follower interaction lock, explicit Master sync opt-out, late joining, and returning to PDF. `node scripts/test-local-server.mjs` checks HTTP authorization, sheet switching, stale positions and reconnect snapshots.
 
 ### Cloud setup for this extension
 

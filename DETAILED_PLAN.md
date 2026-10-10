@@ -405,3 +405,11 @@ Do not treat a successful build or local BroadcastChannel demo as proof of cross
 - [x] Add local unit/HTTP regression tests and document architecture, permissions and acceptance checks.
 - [ ] Run Android/iPhone and multi-browser approval, password, held-gesture and simultaneous-controller acceptance.
 - [x] Deploy changed Database rules and run actual cloud control permission checks before Hosting (2026-10-10).
+
+## Default locked Follower view
+
+- [x] Keep Master sync checked on join and block read-only shared-view interaction while checked.
+- [x] Enable private drag/zoom/scroll only after explicit unchecking; stay off until rechecked.
+- [x] Preserve programmatic synchronization, shared controller interaction and locking after control release.
+- [x] Add gesture regressions and update README, architecture and acceptance procedures.
+- [ ] Verify real phone/desktop locked-following and opt-out/recheck behavior.

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PdfGestures } from './gestures';
+import { canInteractWithDocument } from './follower-sync';
 
 function setup() {
   const target = new EventTarget();
@@ -23,6 +24,33 @@ function setup() {
 }
 
 describe('PDF gestures', () => {
+  it('locks synced Followers until explicit opt-out, and locks again when sync is checked', () => {
+    const t = setup(); let following = true;
+    t.callbacks.locked.mockImplementation(() => !canInteractWithDocument(true, false, following));
+    t.pointer('pointerdown', 1, 100, 100); t.pointer('pointerdown', 2, 200, 100);
+    t.pointer('pointermove', 1, 80, 80); t.pointer('pointermove', 2, 300, 100);
+    expect(t.callbacks.pan).not.toHaveBeenCalled(); expect(t.callbacks.zoom).not.toHaveBeenCalled();
+    expect(t.callbacks.start).not.toHaveBeenCalled(); expect(following).toBe(true);
+    following = false;
+    t.pointer('pointerdown', 1, 100, 100); t.pointer('pointermove', 1, 80, 80);
+    expect(t.callbacks.pan).toHaveBeenCalledWith(20, 20);
+    t.pointer('pointerdown', 2, 200, 80); t.pointer('pointermove', 2, 300, 80);
+    expect(t.callbacks.zoom).toHaveBeenCalledOnce();
+    following = true; t.callbacks.pan.mockClear(); t.callbacks.zoom.mockClear();
+    t.pointer('pointermove', 1, 50, 50);
+    expect(t.capture.size).toBe(0); expect(t.callbacks.pan).not.toHaveBeenCalled(); expect(t.callbacks.zoom).not.toHaveBeenCalled();
+    t.gestures.destroy();
+  });
+  it('keeps shared controllers interactive while the room is ready, but locks loading views', () => {
+    const t = setup(); let ready = true;
+    t.callbacks.locked.mockImplementation(() => !canInteractWithDocument(ready, true, true));
+    t.pointer('pointerdown', 1, 100, 100); t.pointer('pointermove', 1, 80, 80);
+    expect(t.callbacks.pan).toHaveBeenCalledWith(20, 20);
+    ready = false; t.callbacks.pan.mockClear(); t.pointer('pointermove', 1, 50, 50);
+    expect(t.callbacks.pan).not.toHaveBeenCalled(); expect(t.capture.size).toBe(0);
+    expect(canInteractWithDocument(false, false, false)).toBe(false);
+    t.gestures.destroy();
+  });
   it('drags in both axes, captures the pointer, and finishes cleanly', () => {
     const t = setup();
     expect(t.pointer('pointerdown', 1, 200, 300).defaultPrevented).toBe(true);
