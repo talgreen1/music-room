@@ -70,7 +70,9 @@ for architecture, [DETAILED_PLAN.md](DETAILED_PLAN.md) for stories, and
 - Synchronize normalized page/vertical offset, horizontal travel, zoom, source ID
   and monotonically increasing sequence. Publish roughly 15 updates/second with
   at most one write in flight. Reject stale updates and source mismatches; source
-  switches and destination positions are atomic.
+  switches and destination positions are atomic. Tag scroll writes with a browser
+  writerId and skip applying own delayed acknowledgements while controlling;
+  initial loads, source destinations, reconnect and role changes still resynchronize.
 - Each browser downloads/renders its source independently. Room traffic contains
   manifests/coordinates, never PDF frames or screen video. Render only nearby
   pages/tiles; preserve bounded canvas and upload limits.

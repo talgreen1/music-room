@@ -5,6 +5,27 @@ import { RoomService } from './rooms';
 
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); });
 describe('cloud shared-control transactions', () => {
+  it('ignores delayed own scroll acknowledgements but applies other browser edits and legacy updates', async () => {
+    vi.stubGlobal('navigator', { onLine: true });
+    const service = new RoomService(), otherBrowser = new RoomService();
+    Object.assign(service, { db: {}, master: true, activeRoom: true, connected: true, code: '123456', sourceId: 'pdf', sequence: 0 });
+    Object.assign(otherBrowser, { controlling: true, activeRoom: true });
+    const acknowledgements: any[] = [];
+    transaction.mockImplementation(async (_ref, update) => { acknowledgements.push(update({ sequence: acknowledgements.length, sourceId: 'pdf' })); return { committed: true }; });
+    await service.publish({ page: 1, offset: .2, zoom: 1 });
+    await service.publish({ page: 1, offset: .6, zoom: 1 });
+    let localOffset = .8; // User has already moved beyond both acknowledged writes.
+    for (const incoming of acknowledgements) if (service.shouldFollow(incoming, true)) localOffset = incoming.offset;
+    expect(localOffset).toBe(.8);
+    expect(acknowledgements[0].writerId).toMatch(/^[a-f0-9]{32}$/);
+    expect(otherBrowser.shouldFollow(acknowledgements[0], true)).toBe(true);
+    expect(service.shouldFollow({ page: 2, offset: 0, zoom: 1 }, true)).toBe(true);
+    Object.assign(service, { master: false, controlling: true });
+    expect(service.shouldFollow(acknowledgements[1], true)).toBe(false);
+    Object.assign(service, { controlling: false });
+    expect(service.shouldFollow(acknowledgements[1], true)).toBe(true);
+    expect(service.shouldFollow(acknowledgements[1], false)).toBe(false);
+  });
   it('seeds an empty cache and retries using the server sequence without changing source', async () => {
     vi.stubGlobal('navigator', { onLine: true });
     const service = new RoomService();

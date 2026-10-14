@@ -32,6 +32,7 @@ Paths in the Unit column are under `src/`; Integration paths are under `scripts/
 | Feature | Unit/regression coverage | Integration / acceptance coverage |
 | --- | --- | --- |
 | Create/join, room code collisions, expiry and Master ownership | `model.test.ts`, `local-rooms.test.ts` | `test-local-server.mjs`; `test-cloud-rooms.mjs`; two-browser join checklist |
+| Smooth editor scrolling / own acknowledgement suppression | `rooms-control.test.ts`, `shared-control.test.ts` | Local writer-marker round trip; updated `test-cloud-control.mjs` pending rules deployment; latency/device checklist below |
 | Live position updates, throttling, stale-source/sequence rejection | `sync.test.ts`, `model.test.ts`, `local-rooms.test.ts` | Local SSE/reconnect check; cloud live subscriptions; network recovery checklist |
 | Default synced Follower lock and explicit private browsing | `gestures.test.ts` covers drag/pinch, rechecking mid-gesture and controller/loading behavior; `follower-sync.test.ts` covers persistent manual opt-out | Locked-Follower browser checks below |
 | Pinch, two-axis drag, trackpad zoom and dragging over PDF links | `gestures.test.ts`, `model.test.ts` | Local/cloud normalized position checks; Android/iPhone gesture checklist |
@@ -118,7 +119,7 @@ for this test-only work.
 - [ ] Uncheck pending to cancel; uncheck approved to release. Master sync returns checked and locks the read-only view. Uncheck it to browse privately. Re-enable using approval/password again.
 - [ ] Disconnect/reconnect, navigate away during password login or PDF load, expire/delete the room. No obsolete grants/writes/UI callbacks, stale local replay or Settings session remains. Local refresh needs a new grant; cloud refresh retains the same UID grant.
 
-Evidence for this change: 92 unit/regression tests and seven isolated local integration scripts passed; type checking and build are recorded in the implementation report. Actual Firebase control rules checks passed against production on 2026-10-10, including concurrent transactions starting with empty client caches. Real touch/UI acceptance has not yet run. `test-cloud-control.mjs` is outside CI and must run after rules deployment before publishing the dependent frontend. It tests self-grant denial, pending requests, owner denial/approval, administrator grants, concurrent sequences, source reset, revocation, stale writes and Settings/owner permission isolation. It removes its own rooms and does not modify global default/catalog/storage.
+Evidence for this change: 94 unit/regression tests and seven isolated local integration scripts passed; type checking and build are recorded in the implementation report. Actual Firebase control rules checks passed against production on 2026-10-10, including concurrent transactions starting with empty client caches. Real touch/UI acceptance has not yet run. `test-cloud-control.mjs` is outside CI and must run after rules deployment before publishing the dependent frontend. It tests self-grant denial, pending requests, owner denial/approval, administrator grants, concurrent sequences, source reset, revocation, stale writes and Settings/owner permission isolation. It removes its own rooms and does not modify global default/catalog/storage.
 
 ## Synced Follower interaction lock (2026-10-10)
 
@@ -128,3 +129,13 @@ Evidence for this change: 92 unit/regression tests and seven isolated local inte
 - [ ] Grant control: shared drag/zoom works. Release control: Master sync is checked and interaction locked again. Masters remain interactive throughout.
 
 These browser/device procedures have not yet been run. No backend rules or Storage policies change in this feature.
+
+## Smooth shared-control scrolling regression (2026-10-14)
+
+Automated coverage: `rooms-control.test.ts` simulates delayed own acknowledgements after the local view has moved ahead, verifies distinct browser identities and continued other-controller/legacy/follower updates. `shared-control.test.ts` and `test-shared-control.mjs` verify marker round trips, invalid-marker rejection, unchanged authorization and clearing on source resets. `test-cloud-control.mjs` now checks the optional marker against actual Firebase rules; the updated rules were deployed and this actual-service check passed on 2026-10-14.
+
+- [ ] Android/iPhone and desktop: continuously drag/scroll/pinch as Master, with a synced Follower and an approved controller. Verify no backward snaps when own writes return; compare under network latency.
+- [ ] Alternate controller/Master drags, wheel/keyboard scroll and fast-scrollbar movements. Verify the other editors and synced Followers still move together, including separate browser tabs sharing an anonymous UID.
+- [ ] Jump pages, select/reset the same file, switch files, release control and reconnect. Destinations and shared positions must still apply on the initiating device; older clients/records without a marker remain supported.
+
+These device/browser checks remain unrun. Updated Database rules were deployed before Hosting; the actual cloud check verified acceptance of valid markers, rejection of malformed markers and existing shared-control permissions on 2026-10-14. Local checks alone do not establish cloud acceptance.

@@ -4,6 +4,19 @@ import { LocalRoomStore } from '../server/local-rooms';
 const book = { masterId: 'owner', pdfUrl: '/book.pdf', pdfTitle: 'Book', pdfVersion: '1' };
 const position = { page: 4, offset: .4, horizontal: .8, zoom: 2, sourceId: 'pdf' };
 describe('shared control permissions', () => {
+  it('broadcasts each browser writer marker and clears it on source resets', () => {
+    const store = new LocalRoomStore(), owner = store.create(book), member = store.join(owner.code)!;
+    store.grantControl(owner.code, member.memberId);
+    const received: any[] = []; store.subscribe(owner.code, room => received.push(room?.position));
+    expect(store.publish(owner.code, owner.token, { ...position, writerId: 'a'.repeat(32) })).toBe('ok');
+    expect(received.at(-1)).toMatchObject({ writerId: 'a'.repeat(32), sequence: 1 });
+    expect(store.publish(owner.code, member.token, { ...position, writerId: 'b'.repeat(32) })).toBe('ok');
+    expect(received.at(-1)).toMatchObject({ writerId: 'b'.repeat(32), sequence: 2 });
+    expect(store.publish(owner.code, member.token, { ...position, writerId: 'invalid' })).toBe('invalid');
+    expect(store.changeSheet(owner.code, member.token)).toBe('ok');
+    expect(received.at(-1).writerId).toBeUndefined();
+    expect(store.publish(owner.code, owner.token, position)).toBe('ok'); // Older clients remain valid.
+  });
   it('pending is not a grant; owner approval allows both participants to publish', () => {
     const store = new LocalRoomStore(), owner = store.create(book), member = store.join(owner.code)!;
     store.control(owner.code, member.token, 'request');

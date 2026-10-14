@@ -51,6 +51,9 @@
         "position": {
           ".write": "auth != null && (data.parent().child('masterId').val() === auth.uid || data.parent().child('controllers').child(auth.uid).val() === true) && data.parent().child('expiresAt').val() > now && newData.exists()",
           ".validate": "newData.hasChildren(['page','offset','zoom','sequence','updatedAt']) && ((newData.parent().child('sheet').exists() && newData.child('sourceId').val() === newData.parent().child('sheet/id').val()) || (!newData.parent().child('sheet').exists() && (!newData.child('sourceId').exists() || newData.child('sourceId').val() === 'pdf')))",
+          "writerId": {
+            ".validate": "newData.isString() && newData.val().matches(/^[a-f0-9]{32}$/)"
+          },
           "sourceId": {
             ".validate": "newData.isString() && (newData.val() === 'pdf' || newData.val().matches(/^[a-f0-9]{32}$/))"
           },
