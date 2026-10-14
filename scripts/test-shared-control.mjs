@@ -11,7 +11,7 @@ const call = (path, method = 'GET', body, token = '', admin = false) => fetch(`$
 const rooms = [];
 const files = [];
 const api = code => `/api/local-rooms/${code}`;
-const position = { page: 3, offset: .4, zoom: 2, horizontal: .7, sourceId: 'pdf' };
+const position = { page: 3, offset: .4, zoom: 2, horizontal: .7, sourceId: 'pdf', writerId: 'a'.repeat(32) };
 const read = async code => (await (await call(api(code))).json()).room;
 try {
   const book = await (await call('/api/songbook')).json();
@@ -34,6 +34,8 @@ try {
   assert.equal((await call(api(owner.code), 'PATCH', position, member.token)).status, 200);
   assert.equal((await call(api(owner.code), 'PATCH', { ...position, page: 4 }, owner.token)).status, 200);
   assert.equal((await read(owner.code)).position.sequence, 2);
+  assert.equal((await read(owner.code)).position.writerId, position.writerId);
+  assert.equal((await call(api(owner.code), 'PATCH', { ...position, writerId: 'bad' }, member.token)).status, 400);
   const uploaded = await fetch(`${base}${api(owner.code)}/pdfs`, { method: 'POST', headers: { Authorization: `Bearer ${member.token}`, 'Content-Type': 'application/pdf' }, body: Buffer.from('%PDF-1.4\n%%EOF') });
   assert.equal(uploaded.status, 201);
   const { pdfUrl } = await uploaded.json();
@@ -45,6 +47,7 @@ try {
   assert.equal((await call(api(owner.code), 'PATCH', { ...position, sourceId: file.id }, member.token)).status, 200);
   assert.equal((await call(`${api(owner.code)}/sheet`, 'PUT', { sheet: null, location: { page: 8, offset: .3 } }, member.token)).status, 200);
   assert.equal((await read(owner.code)).position.page, 8);
+  assert.equal((await read(owner.code)).position.writerId, undefined, 'Source resets must apply even to their initiator.');
   assert.equal((await call('/api/admin/rooms', 'GET', undefined, member.token)).status, 401);
   assert.equal((await call(`/api/admin/rooms/${owner.code}`, 'DELETE', undefined, member.token)).status, 401);
   assert.equal((await call('/api/admin/default-file', 'PUT', { id: 'pdf' }, member.token)).status, 401);

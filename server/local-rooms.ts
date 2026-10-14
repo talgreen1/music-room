@@ -80,8 +80,9 @@ export class LocalRoomStore {
     if (!this.canControl(code, token)) return 'forbidden';
     if ((position.sourceId || 'pdf') !== (entry.room.sheet?.id || 'pdf')) return 'invalid';
     const horizontal = position.horizontal ?? 0;
+    if (position.writerId !== undefined && (typeof position.writerId !== 'string' || !/^[a-f0-9]{32}$/.test(position.writerId))) return 'invalid';
     if (!Number.isInteger(position.page) || position.page < 1 || position.page > 10000 || !Number.isFinite(position.offset) || position.offset < 0 || position.offset > 1 || !Number.isFinite(position.zoom) || position.zoom < MIN_ZOOM || position.zoom > MAX_ZOOM || !Number.isFinite(horizontal) || horizontal < 0 || horizontal > 1) return 'invalid';
-    entry.room.position = { page: position.page, offset: position.offset, zoom: position.zoom, horizontal, sourceId: position.sourceId || 'pdf', sequence: (entry.room.position.sequence || 0) + 1, updatedAt: this.now() };
+    entry.room.position = { ...(position.writerId ? { writerId: position.writerId } : {}), page: position.page, offset: position.offset, zoom: position.zoom, horizontal, sourceId: position.sourceId || 'pdf', sequence: (entry.room.position.sequence || 0) + 1, updatedAt: this.now() };
     for (const listener of entry.listeners) listener(structuredClone(entry.room));
     return 'ok';
   }

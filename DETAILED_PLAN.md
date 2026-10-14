@@ -413,3 +413,12 @@ Do not treat a successful build or local BroadcastChannel demo as proof of cross
 - [x] Preserve programmatic synchronization, shared controller interaction and locking after control release.
 - [x] Add gesture regressions and update README, architecture and acceptance procedures.
 - [ ] Verify real phone/desktop locked-following and opt-out/recheck behavior.
+
+## Smooth scrolling with multiple controllers
+
+- [x] Identify browser-specific position origins and skip delayed own echoes while editing.
+- [x] Preserve other-editor following, source destinations, reconnect and permission-transition resynchronization.
+- [x] Validate optional marker in local/cloud schema while supporting legacy positions.
+- [x] Add unit/HTTP regression coverage and update architecture, README and manual tests.
+- [ ] Verify real-device scrolling with network latency and multiple editors.
+- [x] Deploy updated Database rules and pass the updated cloud control check before publishing Hosting (2026-10-14).

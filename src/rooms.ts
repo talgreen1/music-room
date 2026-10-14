@@ -14,6 +14,7 @@ export const localServerConfigured = env.DEV && !cloudConfigured;
 export const songbook = { pdfUrl: env.VITE_PDF_URL || '/songbooks/songbook-2026-10.pdf', pdfVersion: env.VITE_PDF_VERSION || '2026-10', pdfTitle: env.VITE_PDF_TITLE || 'חוברת שירים' };
 export type Connection = 'Connected' | 'Reconnecting…' | 'Offline';
 export class RoomService {
+  private readonly writerId = Array.from(crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, '0')).join('');
   private db?: Database;
   private uid = '';
   private channel?: BroadcastChannel;
@@ -185,11 +186,15 @@ export class RoomService {
       else await update(ref(this.db, `rooms/${code}`), { [`controllers/${this.uid}`]: null, [`controlRequests/${this.uid}`]: null });
     } else throw new Error('Shared control requires the local server or Firebase.');
   }
+  /** Ignore our delayed acknowledgements while editing; Followers still follow. */
+  shouldFollow(position: Position, following: boolean) {
+    return this.canControl() ? position.writerId !== this.writerId : following;
+  }
   async publish(position: Position) {
     if (!this.canControl() || !this.code || !this.connected || !navigator.onLine) return;
     if (position.sourceId && position.sourceId !== this.sourceId) return;
     const knownSequence = this.sequence;
-    const value = { ...normalizePosition(position), sourceId: position.sourceId || this.sourceId, sequence: ++this.sequence, updatedAt: Date.now() + this.serverOffset };
+    const value = { ...normalizePosition(position), writerId: this.writerId, sourceId: position.sourceId || this.sourceId, sequence: ++this.sequence, updatedAt: Date.now() + this.serverOffset };
     if (this.db) await runTransaction(ref(this.db, `rooms/${this.code}/position`), current => {
       // Firebase may first call a transaction with null when its local cache is empty.
       // Seed from the subscribed sequence; the server retries against its actual state.

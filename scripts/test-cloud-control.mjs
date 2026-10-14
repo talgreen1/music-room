@@ -30,7 +30,7 @@ try {
     }
   }
   const path = `rooms/${codes[0]}`, id = users[1].uid, other = users[2].uid;
-  const pos = { page: 5, offset: .5, horizontal: .8, zoom: 2, sourceId: 'pdf', sequence: 1, updatedAt: serverTimestamp() };
+  const pos = { page: 5, offset: .5, horizontal: .8, zoom: 2, sourceId: 'pdf', writerId: 'a'.repeat(32), sequence: 1, updatedAt: serverTimestamp() };
   await set(ref(dbs[1], `${path}/controlRequests/${id}`), true);
   await denied(() => set(ref(dbs[1], `${path}/position`), pos));
   await denied(() => set(ref(dbs[1], `${path}/controllers/${id}`), true));
@@ -40,6 +40,8 @@ try {
   await set(ref(dbs[1], `${path}/controlRequests/${id}`), true);
   await update(ref(dbs[0], path), { [`controllers/${id}`]: true, [`controlRequests/${id}`]: null });
   await set(ref(dbs[1], `${path}/position`), pos);
+  assert.equal((await get(ref(dbs[0], `${path}/position`))).val().writerId, pos.writerId);
+  await denied(() => set(ref(dbs[1], `${path}/position`), { ...pos, sequence: 2, writerId: 'invalid' }));
   await denied(() => set(ref(dbs[1], `rooms/${codes[1]}/position`), pos));
   await set(ref(dbs[2], `${path}/controlRequests/${other}`), true);
   await denied(() => update(ref(dbs[1], path), { [`controllers/${other}`]: true, [`controlRequests/${other}`]: null }));

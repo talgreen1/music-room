@@ -306,7 +306,7 @@ async function openRoom(code: string) {
         ready = true; $('#count').textContent = ` / ${viewer!.count}`; $<HTMLInputElement>('#page').max = String(viewer!.count);
         viewer!.follow(room!.position, true, true); updateFollow();
       } catch (error) { if (token !== generation || revision !== sourceRevision) return; unavailable('Could not open the songbook', `${errorText(error)} Try again, or return home to join another room.`); }
-    } else if (ready && (controlsRoom || following) && ((next.position.sequence || 0) > lastSequence || wasControl !== controlsRoom)) {
+    } else if (ready && (wasControl !== controlsRoom || service.shouldFollow(next.position, following)) && ((next.position.sequence || 0) > lastSequence || wasControl !== controlsRoom)) {
       viewer!.follow(next.position, controlsRoom || Boolean(previous && Math.abs(previous.page - next.position.page) > 1), true);
     }
     lastSequence = Math.max(lastSequence, next.position.sequence || 0);
