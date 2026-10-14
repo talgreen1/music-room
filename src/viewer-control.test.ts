@@ -14,6 +14,32 @@ function fixture() {
 }
 afterEach(() => vi.unstubAllGlobals());
 describe('shared controller view updates', () => {
+  it('applies zoom-out and its page/axis coordinates together without crossing unrelated pages', () => {
+    const viewer = fixture(), state = viewer as any;
+    const raf = vi.fn(); vi.stubGlobal('requestAnimationFrame', raf);
+    state.zoom = 2; state.pages = [{}, {}]; state.host.scrollTop = 2500; state.host.scrollLeft = 1200;
+    state.geometry = () => ({ tops: [0, 1000 * state.zoom], heights: [1000 * state.zoom, 1000 * state.zoom] });
+    state.layout = () => { state.host.scrollHeight = 2000 * state.zoom; state.host.scrollWidth = 1000 * state.zoom; };
+    viewer.follow({ page: 2, offset: .25, zoom: 1, horizontal: .75 }, false, true);
+    expect(state.host.scrollTop).toBe(1250); expect(state.host.scrollLeft).toBe(600);
+    expect(viewer.onPage).toHaveBeenLastCalledWith(2);
+    expect(viewer.onPosition).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, offset: .25, zoom: 1, horizontal: .75 }), true);
+    expect(raf).not.toHaveBeenCalled();
+    viewer.follow({ page: 2, offset: .25, zoom: 2, horizontal: 1 }, false, true);
+    expect(state.host.scrollTop).toBe(2500); expect(state.host.scrollLeft).toBe(1800);
+    expect(raf).not.toHaveBeenCalled();
+  });
+  it('keeps interpolation for same-zoom scrolling and cancels it when zoom changes', () => {
+    const viewer = fixture(), state = viewer as any;
+    vi.stubGlobal('requestAnimationFrame', vi.fn(() => 42));
+    state.layout = vi.fn();
+    viewer.follow({ page: 1, offset: .6, zoom: 1 }, false, true);
+    expect(state.host.scrollTop).toBe(0); expect(requestAnimationFrame).toHaveBeenCalledOnce();
+    viewer.follow({ page: 1, offset: .4, zoom: 1.5 }, false, true);
+    expect(cancelAnimationFrame).toHaveBeenCalledWith(42);
+    expect(state.host.scrollTop).toBe(400); expect(state.target).toBeUndefined();
+    expect(requestAnimationFrame).toHaveBeenCalledOnce();
+  });
   it('marks incoming positions and delayed scroll events remote, preventing rebroadcast', () => {
     const viewer = fixture();
     viewer.follow({ page: 1, offset: .4, horizontal: .8, zoom: 1 }, true, true);

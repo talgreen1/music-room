@@ -35,13 +35,13 @@ Paths in the Unit column are under `src/`; Integration paths are under `scripts/
 | Smooth editor scrolling / own acknowledgement suppression | `rooms-control.test.ts`, `shared-control.test.ts` | Local writer-marker round trip; updated `test-cloud-control.mjs` pending rules deployment; latency/device checklist below |
 | Live position updates, throttling, stale-source/sequence rejection | `sync.test.ts`, `model.test.ts`, `local-rooms.test.ts` | Local SSE/reconnect check; cloud live subscriptions; network recovery checklist |
 | Default synced Follower lock and explicit private browsing | `gestures.test.ts` covers drag/pinch, rechecking mid-gesture and controller/loading behavior; `follower-sync.test.ts` covers persistent manual opt-out | Locked-Follower browser checks below |
-| Pinch, two-axis drag, trackpad zoom and dragging over PDF links | `gestures.test.ts`, `model.test.ts` | Local/cloud normalized position checks; Android/iPhone gesture checklist |
+| Pinch, two-axis drag, trackpad zoom and dragging over PDF links | `gestures.test.ts`, `model.test.ts`, `viewer-control.test.ts` (atomic received zoom/scroll) | Local/cloud normalized position checks; Android/iPhone gesture checklist |
 | Internal links, named destinations and RTL alignment | `pdf-links.test.ts`, gesture tap suppression | Real supplied-PDF destination tests; browser RTL/zoom checklist |
 | PDF rendering and mobile compatibility | Actual PDF/link/search regressions | `test-pdf-compat.mjs` renders ink on actual pages with newer built-ins initially missing; phone memory/rotation checks |
 | Page navigation, first-page action and final-page anchoring | `model.test.ts` | Page-button browser checklist |
 | Master vertical scrollbar, keyboard handling and hidden Follower scrollbar | `scrollbar.test.ts` | Role/layout checklist |
 | PDF size/header and original descriptor validation | `songbook.test.ts` | `test-settings.mjs`, `test-file-library.mjs`; PDF-only replacement dialog checklist |
-| Shared room control, pending/approval/password grants, release and permissions | `shared-control.test.ts`, `rooms-control.test.ts`, `viewer-control.test.ts`, `follower-sync.test.ts`, scrollbar held-move regression | `test-shared-control.mjs`; rules-first `test-cloud-control.mjs`; shared-control checklist below |
+| Shared room control, pending/approval/password grants, release and permissions | `shared-control.test.ts`, `control-dialog.test.ts`, `rooms-control.test.ts`, `viewer-control.test.ts`, `follower-sync.test.ts`, scrollbar held-move regression | `test-shared-control.mjs`; rules-first `test-cloud-control.mjs`; shared-control checklist below |
 | Settings password, expiry, rate limiting and administrator authorization | `admin-auth.test.ts` | `test-settings.mjs`, `test-cloud-settings.mjs`; focus/lock/in-room checklist |
 | Persistent PDFs/images, default choice and original PDF replacement | `song-library.test.ts`, `songbook.test.ts`, `local-rooms.test.ts` | Settings/library checks verify new defaults and unchanged existing rooms; replacement browser checklist |
 | Screenshot overlap, stationary bars, uncertain joins and manifest limits | `stitch.test.ts` | Actual JPEG upload/download checks; stitch/crop visual checklist |
@@ -110,7 +110,7 @@ for this test-only work.
 ## Shared-control acceptance (not yet run on browsers/phones)
 
 - [ ] Create a room in one browser and join in two other browsers/phones. The owner's role stays Master; Control room is the last Follower toolbar item.
-- [ ] Check Control room; verify password input focus. Close/Cancel without action: checkbox resets and permissions stay read-only.
+- [ ] Check Control room; verify Ask for approval appears above the password form and remains reachable with the mobile keyboard open; verify initial focus is on Ask for approval and the keyboard stays closed until tapping the password. Close/Cancel without action: checkbox resets and permissions stay read-only.
 - [ ] Ask for approval: dialog closes, checked box shows pending, private browsing remains available and does not move other participants. Owner sees Requests count.
 - [ ] Owner denies: pending disappears. Request again and approve: Follower becomes Controller and gets shared file selection/navigation. A second Follower stays read-only.
 - [ ] Try incorrect Settings password, then the correct one. Success grants only room control and signs Settings out; opening Settings again still requires a password.
@@ -119,7 +119,7 @@ for this test-only work.
 - [ ] Uncheck pending to cancel; uncheck approved to release. Master sync returns checked and locks the read-only view. Uncheck it to browse privately. Re-enable using approval/password again.
 - [ ] Disconnect/reconnect, navigate away during password login or PDF load, expire/delete the room. No obsolete grants/writes/UI callbacks, stale local replay or Settings session remains. Local refresh needs a new grant; cloud refresh retains the same UID grant.
 
-Evidence for this change: 94 unit/regression tests and seven isolated local integration scripts passed; type checking and build are recorded in the implementation report. Actual Firebase control rules checks passed against production on 2026-10-10, including concurrent transactions starting with empty client caches. Real touch/UI acceptance has not yet run. `test-cloud-control.mjs` is outside CI and must run after rules deployment before publishing the dependent frontend. It tests self-grant denial, pending requests, owner denial/approval, administrator grants, concurrent sequences, source reset, revocation, stale writes and Settings/owner permission isolation. It removes its own rooms and does not modify global default/catalog/storage.
+Evidence for this change: 97 unit/regression tests and seven isolated local integration scripts passed; type checking and build are recorded in the implementation report. Actual Firebase control rules checks passed against production on 2026-10-10, including concurrent transactions starting with empty client caches. Real touch/UI acceptance has not yet run. `test-cloud-control.mjs` is outside CI and must run after rules deployment before publishing the dependent frontend. It tests self-grant denial, pending requests, owner denial/approval, administrator grants, concurrent sequences, source reset, revocation, stale writes and Settings/owner permission isolation. It removes its own rooms and does not modify global default/catalog/storage.
 
 ## Synced Follower interaction lock (2026-10-10)
 
@@ -139,3 +139,19 @@ Automated coverage: `rooms-control.test.ts` simulates delayed own acknowledgemen
 - [ ] Jump pages, select/reset the same file, switch files, release control and reconnect. Destinations and shared positions must still apply on the initiating device; older clients/records without a marker remain supported.
 
 These device/browser checks remain unrun. Updated Database rules were deployed before Hosting; the actual cloud check verified acceptance of valid markers, rejection of malformed markers and existing shared-control permissions on 2026-10-14. Local checks alone do not establish cloud acceptance.
+
+## Follower zoom/scroll coherence (2026-10-14)
+
+The supplied six-second recording was inspected at sampled timestamps; it shows zoom changes followed by movement through blank/unrelated document regions before settling. The viewer previously resized pages immediately but interpolated from scroll pixels belonging to the old scale. Zoom changes now apply both scroll axes and scale atomically; unchanged-zoom pans retain interpolation.
+
+`viewer-control.test.ts` covers page-2 zoom-out/zoom-in coordinates, horizontal/RTL alignment, interruption of a pending pan animation, remote tagging and preservation of same-zoom interpolation. This is a coordinate regression, not proof of real canvas rendering or phone smoothness. No backend rules change.
+
+- [ ] Repeat the recorded zoom-out/in sequence with a synced Follower: no intermediate blank/adjacent-page drift; both axes and page remain aligned with the Master.
+- [ ] Test rapid pinch-in/out near page boundaries, RTL right edge, portrait/landscape and slower network, including an approved controller viewing another editor's zoom.
+- [ ] Confirm ordinary same-zoom scrolling still eases and final positions match. Check canvas/text remains visible during repeated zoom gestures on Android/iPhone.
+
+These post-fix browser/device checks have not yet been run; the original recording was inspected, not reproduced in a live browser.
+
+## Control dialog approval-first layout
+
+`control-dialog.test.ts` checks the rendered approval-before-password order, primary/secondary action emphasis, approval-button focus with no password autofocus and requesting approval without entering a password. It uses a minimal mocked DOM and does not establish phone keyboard/layout visibility. Verify the green approval button is reachable with the Android/iPhone keyboard open, the compact password/unlock row fits without clipping, and focusing the password field does not trigger browser-page zoom (input font stays 16px); this physical-device check has not yet been run.

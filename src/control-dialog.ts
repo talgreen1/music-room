@@ -39,7 +39,7 @@ export function showControlRequests(service: RoomService, requests: () => string
 export function showControlDialog(service: RoomService, onClose: () => void) {
   const code = service.roomCode(), member = service.participantId();
   const dialog = document.createElement('dialog'); dialog.className = 'control-dialog';
-  dialog.innerHTML = `<button class="dialog-close icon-button" aria-label="Close">×</button><h2>Control room</h2><form><label>Settings password<input type="password" required autocomplete="off" /></label><button class="primary" type="submit">Unlock control</button></form><p>Or ask the room owner.</p><button class="secondary" id="request-control">Ask for approval</button><p role="alert"></p>`;
+  dialog.innerHTML = `<button class="dialog-close icon-button" aria-label="Close">×</button><h2>Control room</h2><button class="primary" id="request-control">Ask for approval</button><p>Or enter the Settings password.</p><form><label>Settings password<input type="password" required autocomplete="off" /></label><button class="secondary control-unlock" type="submit">Unlock control</button></form><p role="alert"></p>`;
   document.body.append(dialog);
   let closed = false;
   const close = () => { if (closed) return; closed = true; dialog.close(); dialog.remove(); onClose(); };
@@ -61,6 +61,6 @@ export function showControlDialog(service: RoomService, onClose: () => void) {
     busy(true);
     try { await service.control('request'); close(); } catch (error) { report(error); busy(false); }
   };
-  dialog.showModal(); dialog.querySelector<HTMLInputElement>('input')!.focus();
+  dialog.showModal(); dialog.querySelector<HTMLButtonElement>('#request-control')!.focus();
   return close;
 }
