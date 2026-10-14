@@ -246,7 +246,8 @@ export class SongbookViewer {
     this.sharedPosition = { ...position };
     this.settledPosition = undefined;
     const zoom = clampZoom(position.zoom);
-    if (this.zoom !== zoom) { this.zoom = zoom; this.layout(); }
+    const zoomChanged = this.zoom !== zoom;
+    if (zoomChanged) { this.zoom = zoom; this.layout(); }
     const { tops, heights } = this.geometry();
     this.target = {
       top: Math.min(Math.max(0, positionTop(position, tops, heights)), Math.max(0, this.host.scrollHeight - this.host.clientHeight)),
@@ -258,7 +259,10 @@ export class SongbookViewer {
       this.settledPosition = { position: { ...position }, top: this.host.scrollTop };
       this.target = undefined; this.emitPosition();
     };
-    if (immediate) { finish(); return; }
+    // Old scroll pixels describe a different page after layout changes scale.
+    // Apply the matching coordinates before paint, rather than animate through
+    // unrelated parts of the newly resized document. Ordinary pans still ease.
+    if (immediate || zoomChanged) { finish(); return; }
     let previous = performance.now();
     const animate = (now: number) => {
       if (this.target === undefined) return;

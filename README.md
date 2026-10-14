@@ -29,7 +29,7 @@ Followers open **☰** for **Add file/song**, **View files/songs** and **Setting
 
 ### Shared room control
 
-The last element in a Follower's bottom toolbar is **Control room**. Check it to enter the Settings password or choose **Ask for approval**. The password field receives focus. A request closes the dialog and displays **pending** next to the checked box. Pending requests grant no editing rights. The owner opens the header's **Requests** button and approves or denies individual requests; the list refreshes while open.
+The last element in a Follower's bottom toolbar is **Control room**. Check it to enter the Settings password or choose **Ask for approval**. **Ask for approval** is the green primary button at the top of the dialog. The smaller password field and secondary **Unlock control** button share one compact row below, keeping approval easy to reach while the phone keyboard is open. The dialog focuses **Ask for approval**; the keyboard opens only when you tap the password field. A request closes the dialog and displays **pending** next to the checked box. Pending requests grant no editing rights. The owner opens the header's **Requests** button and approves or denies individual requests; the list refreshes while open.
 
 After approval or successful password entry, the participant is labeled **Controller** and gets the shared file selector, search and navigation controls, plus document drag/zoom. The owner remains **Master**. Each browser tags its scrolling updates with an optional `writerId` marker. Editors ignore their own delayed server acknowledgements so scrolling and pinching remain local and smooth, while still applying other editors' changes. Initial loading, reconnect, control changes and file/page destination switches still resynchronize. Both receive each other's changes; the latest accepted edit wins, with monotonic sequence numbers. Unchecking **Control room** cancels a pending request or releases control and returns to following. Only the owner can approve requests through the room UI. Controllers cannot approve others, change ownership/lifetime, set the global default, delete files or delete rooms.
 
@@ -127,6 +127,9 @@ Closing the Master tab leaves the last shared position in the room; there is no 
 
 ### Position synchronization
 
+When a received update changes zoom, the viewer applies document scale and the corresponding page/vertical/horizontal coordinates together before the next paint. This prevents Followers briefly sliding through the wrong pages during zoom-in/out. At unchanged zoom, ordinary scrolling still interpolates smoothly. Zoom remains synchronized in throttled updates rather than streaming screen frames.
+
+
 The room is stored under `rooms/<code>` with this shape:
 
 ```json
@@ -163,7 +166,7 @@ The Master's RTL checkbox sits in the hamburger menu in the upper bar, checked b
 
 Page buttons retain the selected page after a completed jump, including the final pages when a tall viewport prevents their tops from reaching the top edge. Manual scrolling resumes the normal reading-position calculation. Settings opens with the password field focused.
 
-The Master has a persistent vertical scrollbar beside the PDF: drag its thumb or tap its track to move quickly through the songbook. It also supports arrow keys, Page Up/Down, Home, and End when focused. The Master's first toolbar button jumps directly to PDF page 1 while retaining zoom. Followers have no vertical scrollbar and browse by dragging, pinching, mouse wheel, or keyboard; this activity temporarily pauses sync.
+The Master has a persistent vertical scrollbar beside the PDF: drag its thumb or tap its track to move quickly through the songbook. It also supports arrow keys, Page Up/Down, Home, and End when focused. The Master's first toolbar button jumps directly to PDF page 1 while retaining zoom. Read-only Followers have no vertical scrollbar. Uncheck Master sync to browse privately by dragging, pinching, mouse wheel or keyboard; recheck it to resume following and lock the view again.
 
 Dragging and pinching also work when fingers start over links. A single tap opens the link; moving at least 8 CSS pixels starts a drag, and a second finger starts a pinch immediately. Gestures suppress accidental link activation when fingers lift. Keyboard link activation remains available.
 
