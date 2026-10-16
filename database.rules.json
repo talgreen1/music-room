@@ -6,6 +6,14 @@
       ".read": false,
       ".write": false
     },
+    "storageConfig": {
+      ".read": "auth != null",
+      "githubOrigin": {
+        ".write": "auth != null && root.child('admins').child(auth.uid).val() === true",
+        ".validate": "newData.isString() && newData.val().matches(/^https:\\/\\/[A-Za-z0-9.-]+$/)"
+      },
+      "$other": { ".validate": false }
+    },
     "songbook": {
       ".read": "auth != null",
       ".write": "auth != null && root.child('admins').child(auth.uid).val() === true && newData.exists()",
@@ -152,7 +160,7 @@
           "$index": {
             ".validate": "$index.matches(/^([0-9]|[1-3][0-9])$/) && newData.hasChildren(['url','width','height'])",
             "url": {
-              ".validate": "newData.isString() && newData.val().length <= 2048 && newData.val().beginsWith('https://vsnrxzpigrrafdrmjugo.supabase.co/storage/v1/object/public/room-sheets/' + newData.parent().parent().parent().child('ownerId').val() + '/' + $id + '/')"
+              ".validate": "newData.isString() && newData.val().length <= 2048 && (newData.val().beginsWith('https://vsnrxzpigrrafdrmjugo.supabase.co/storage/v1/object/public/room-sheets/' + newData.parent().parent().parent().child('ownerId').val() + '/' + $id + '/') || (root.child('storageConfig/githubOrigin').isString() && newData.val().beginsWith(root.child('storageConfig/githubOrigin').val() + '/files/' + newData.parent().parent().parent().child('ownerId').val() + '/' + $id + '/') && newData.val().matches(/^https:\\/\\/[A-Za-z0-9.-]+\\/files\\/[A-Za-z0-9_-]+\\/[a-f0-9]{32}\\/[0-9]+-([0-9]|[1-3][0-9])\\.jpg$/)))"
             },
             "width": {
               ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 1 && newData.val() <= 1600"
@@ -181,7 +189,7 @@
           ".validate": "auth != null && root.child('admins').child(auth.uid).val() === true && newData.isNumber() && newData.val() >= now - 60000 && newData.val() <= now + 60000"
         },
         "pdfUrl": {
-          ".validate": "newData.isString() && newData.val() === 'https://vsnrxzpigrrafdrmjugo.supabase.co/storage/v1/object/public/room-pdfs/' + newData.parent().child('ownerId').val() + '/' + $id + '/document.pdf'"
+          ".validate": "newData.isString() && newData.val().length <= 2048 && (newData.val() === 'https://vsnrxzpigrrafdrmjugo.supabase.co/storage/v1/object/public/room-pdfs/' + newData.parent().child('ownerId').val() + '/' + $id + '/document.pdf' || (root.child('storageConfig/githubOrigin').isString() && newData.val().beginsWith(root.child('storageConfig/githubOrigin').val() + '/files/' + newData.parent().child('ownerId').val() + '/' + $id + '/') && newData.val().matches(/^https:\\/\\/[A-Za-z0-9.-]+\\/files\\/[A-Za-z0-9_-]+\\/[a-f0-9]{32}\\/[0-9]+-document\\.pdf$/)))"
         },
         "fileNames": {
           ".validate": "newData.hasChild('0')",

@@ -94,7 +94,12 @@ for architecture, [DETAILED_PLAN.md](DETAILED_PLAN.md) for stories, and
 ## Backends, persistence and secrets
 
 - Production: Firebase Hosting, anonymous Firebase Authentication and Realtime
-  Database; Supabase public `room-pdfs`/`room-sheets` buckets store uploads.
+  Database. With `VITE_GITHUB_STORAGE_URL`, a Cloudflare Worker streams uploads to
+  private GitHub release assets and serves public URLs. Without it, legacy Supabase
+  public `room-pdfs`/`room-sheets` buckets store uploads. GitHub credentials belong
+  only in Worker secrets. Keep `/storageConfig/githubOrigin` and URL rules aligned;
+  deploy/verify Worker and rules before frontend cutover. Keep Supabase bytes/URLs
+  available until pinned rooms expire; migration must back up and verify bytes first.
   Legacy `songbooks` URLs must continue working. Avoid introducing paid services
   or requiring a credit card without an explicit user decision.
 - `database.rules.json` is the cloud authorization/schema boundary. Storage SQL

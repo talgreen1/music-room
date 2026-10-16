@@ -388,6 +388,21 @@ Hosting deployed on 2026-10-07. Live HTTPS checks confirm separate share/copy ic
 
 Release evidence (2026-10-08): user confirmed Follower uploads locally. All 67 tests and the deployment build pass. Firebase database rules and Hosting are published. Cloud PDF/image regressions verify actual Follower uploads, exact downloads, Master source selection, denied privileged writes, persistent file/default protection and cleanup. Disposable records/files were removed and the prior default restored. The Follower upload notice now hides after five seconds. Original-PDF replacement uses the existing administrator-only descriptor endpoint; physical-phone replacement acceptance remains pending.
 
+## GitHub file storage migration
+
+- [x] GH-001: Preserve room/Settings phone uploads with a Cloudflare Worker and private GitHub release attachments.
+- [x] GH-002: Verify Firebase tokens and current upload/admin permissions; enforce own namespace, immutable names and file limits.
+- [x] GH-003: Serve public PDF/JPEG downloads with CORS, Range forwarding and no repository-secret forwarding.
+- [x] GH-004: Keep default/deletion Settings-only and retain bytes needed by the original or active rooms.
+- [x] GH-005: Add provider selection and compatible catalog URL rules; preserve legacy Supabase URLs and local persistence.
+- [x] GH-006: Add backup/migration tools, maintenance snapshot validation, byte verification and atomic descriptor cutover.
+- [x] GH-007: Add isolated Worker/runtime and client tests, documentation and actual-service check procedure.
+- [x] GH-008: Configure repository-scoped Worker secret; deploy final Worker/rules and pass real-service checks (2026-10-16, full songbook upload/download and disposable cleanup).
+- [x] GH-009: Back up and migrate existing files, select new upload provider, and publish Hosting (2026-10-16, continued migration authorized).
+- [ ] GH-010: Verify Android/iPhone imports, large PDF, stitching, search/defaults and active-room retention on production.
+
+Migration evidence (2026-10-16): the previous Supabase storage hostname was unavailable. The user supplied a local original PDF (14,276,162 bytes). A durable local backup and SHA-256-verified GitHub copy were created; the original descriptor now points to GitHub, with a new version. No saved catalog files required migration. Existing rooms and Supabase bytes were retained. Physical-phone acceptance remains outstanding.
+
 ## Verification approach
 
 Use focused automated tests for coordinate math, throttling/coalescing, stale-message handling, and recovery state transitions. Use Firebase emulator tests for the authorization boundary and concurrent room creation. Use browser tests for the create/join/view/follow flows, and manual physical-device tests for scrolling, memory, orientation, and mobile background behavior.
