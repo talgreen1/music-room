@@ -25,9 +25,9 @@ GitHub storage is deployed and enabled on the live site as of 2026-10-16. Live u
 
 ## Room controls
 
-The Master opens **☰** for **Add file/song**, **Select file/song**, **Settings**, and the default-checked **RTL** checkbox, in that order. Search uses the separate header icon. The lower toolbar has **↑** (page 1), previous page, page input and next page. Zoom is a document gesture; there are no Master zoom buttons or percentage readout. When viewing a library file, a **PDF** button returns to the room's pinned original songbook.
+The Master opens **☰** for **Add file/song**, **Select file/song**, **Settings**, and the default-checked **RTL** checkbox, in that order. Search uses the separate header icon. The lower toolbar starts with the **first-page arrow** (jump to page 1), followed by **‹ / ›** for previous/next page navigation, plus compact **− / zoom % / +** controls. There is no page-number input or current/total display. Zoom buttons change document zoom in 10 percentage point steps within 75%–400%; pinch zoom remains available and updates the same readout. When viewing a library file, a **PDF** button returns to the room's pinned original songbook.
 
-Followers open **☰** for **Add file/song**, **View files/songs** and **Settings**. File previews are private and do not change the shared view. Their lower toolbar starts with **Master sync**, followed by zoom/page information. Both roles show the larger room code. Settings can open over an active room without disconnecting it; its password input receives focus.
+Followers open **☰** for **Add file/song**, **View files/songs** and **Settings**. File previews are private and do not change the shared view. Their lower toolbar starts with **Master sync**, followed by compact zoom controls. Zoom buttons are disabled while synced; uncheck Master sync to zoom privately. Followers have no page-number display or navigation buttons. Both roles show the larger room code. Settings can open over an active room without disconnecting it; its password input receives focus.
 
 ### Shared room control
 
@@ -168,11 +168,11 @@ Pinch inside the PDF to zoom around your fingers; drag with one finger or the pr
 
 Tap or click the songbook's embedded internal links to open the referenced PDF page. Link regions scale with document zoom and use the PDF's destination coordinates, including named destinations and page object references. Navigation preserves the current document zoom and aligns to the right edge by default for the RTL songbook. The Master has an **RTL orientation** checkbox, checked by default; uncheck it for left-edge alignment. Changing the checkbox also aligns the current view. The resulting horizontal position and link navigation synchronize through the existing room position updates. Followers must uncheck Master sync before navigating links privately; checking it again returns to the shared view. These links navigate inside the loaded PDF rather than opening another browser page.
 
-The Master's RTL checkbox sits in the hamburger menu in the upper bar, checked by default. The lower bar keeps page navigation and an upward arrow to jump to page 1. Zoom with a pinch on the document; the Master has no zoom buttons or percentage in the lower bar.
+The Master's RTL checkbox sits in the hamburger menu in the upper bar, checked by default. The lower bar keeps the first-page arrow, previous/next page navigation and compact zoom-out, percentage and zoom-in controls. Pinching remains available; both input methods use the existing synchronized document zoom.
 
 Page buttons retain the selected page after a completed jump, including the final pages when a tall viewport prevents their tops from reaching the top edge. Manual scrolling resumes the normal reading-position calculation. Settings opens with the password field focused.
 
-The Master has a persistent vertical scrollbar beside the PDF: drag its thumb or tap its track to move quickly through the songbook. It also supports arrow keys, Page Up/Down, Home, and End when focused. The Master's first toolbar button jumps directly to PDF page 1 while retaining zoom. Read-only Followers have no vertical scrollbar. Uncheck Master sync to browse privately by dragging, pinching, mouse wheel or keyboard; recheck it to resume following and lock the view again.
+The Master has a persistent vertical scrollbar beside the PDF: drag its thumb or tap its track to move quickly through the songbook. It also supports arrow keys, Page Up/Down, Home, and End when focused. Read-only Followers have no vertical scrollbar. Uncheck Master sync to browse privately by dragging, pinching, mouse wheel or keyboard; recheck it to resume following and lock the view again.
 
 Dragging and pinching also work when fingers start over links. A single tap opens the link; moving at least 8 CSS pixels starts a drag, and a second finger starts a pinch immediately. Gestures suppress accidental link activation when fingers lift. Keyboard link activation remains available.
 
@@ -507,7 +507,7 @@ Supabase's Free plan has storage/download limits and projects can pause after in
 - Synced Followers cannot drag or zoom; explicitly uncheck Master sync to browse privately.
 - Manually uncheck Master sync to keep browsing independently; check it to return immediately.
 - Page numbers refer to physical PDF pages, not printed songbook numbering.
-- Compact Follower controls show Master sync and page/zoom readouts. The Master has page navigation in the lower bar and a hamburger menu for song selection, screenshot imports, Settings and RTL.
+- Compact Follower controls show Master sync and a zoom percentage with minus/plus buttons; buttons unlock only for private browsing or approved control. The Master has page navigation in the lower bar and a hamburger menu for song selection, screenshot imports, Settings and RTL.
 
 Realtime traffic contains only page, normalized vertical offset, normalized horizontal travel, relative zoom, sequence, and timestamp. PDF pages render locally and nearby canvases are retained rather than rendering all pages simultaneously.
 
