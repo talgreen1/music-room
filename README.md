@@ -17,6 +17,7 @@ GitHub storage is deployed and enabled on the live site as of 2026-10-16. Live u
 | Followers | Master sync is checked by default and locks document interaction; uncheck it to browse privately until explicitly checked again. No Master navigation buttons, search icon or vertical scrollbar. |
 | Viewer | PDF.js rendering, internal PDF links, document-only pinch/trackpad zoom, two-axis dragging, RTL alignment and Master fast-scroll/page controls. |
 | Library | Persistent PDFs and automatically stitched screenshots. Masters, Followers and Settings administrators can add files; the Master or an approved controller selects the shared view. |
+| Library views | The room file chooser opens as a thumbnail grid. Switch between **Thumbnails** and **List**; previews show the first PDF page or the first image tile, with file names underneath. |
 | Shared control | Followers enable Control room with the Settings password or owner approval. Requests show pending; approved controllers select files and drag/zoom alongside the owner. |
 | Settings | Room/file lists, previews, uploads, original PDF replacement, default selection and deletion. Room deletion offers keep files, delete files or cancel. |
 | Search | Master header and Settings search across all files or the current room file. Names and readable PDF text, no OCR; redundant index/song-page matches removed. |
@@ -512,6 +513,10 @@ Supabase's Free plan has storage/download limits and projects can pause after in
 Realtime traffic contains only page, normalized vertical offset, normalized horizontal travel, relative zoom, sequence, and timestamp. PDF pages render locally and nearby canvases are retained rather than rendering all pages simultaneously.
 
 ## Upload and choose files
+
+**Select file/song** (Master/controller) and **View files/songs** (Follower) open in **Thumbnails** view by default, including the original songbook. Use the **Thumbnails / List** toggle beside Refresh files to switch without changing the selected song. Both views keep the same shared-selection/private-preview permissions. Refresh and automatic updates retain the chosen view; reopening starts in thumbnails again. A failed thumbnail shows **Preview unavailable**, while its file name remains selectable.
+
+PDF thumbnails render page 1 locally with PDF.js, with at most two render jobs and bounded canvases. They load near the visible area, and offscreen canvases and pending work are released on scroll, view switch, refresh or close. Image previews load the first saved JPEG tile lazily; they do not stitch or download all tiles again. PDF previews may still download substantial PDF data depending on the host and document structure. List view starts no thumbnail downloads. No thumbnail bytes or changes to the room are sent through realtime synchronization.
 
 Open **Room menu > Add file/song** as Master or Follower, or **Settings > Files & songs > Add file/song** as administrator. Separate **Choose PDF** and **Choose screenshots** inputs select one PDF or multiple PNG/JPEG/WebP images. Neither requests camera capture; the browser may still offer a camera choice for images. Mixed PDF/image selections and multiple PDFs are rejected. Enter an optional name; an empty name uses the filename. PDFs retain internal links; images use automatic stitching/crop preview. Files persist for future rooms. Master uploads select the file after saving; Settings and Follower imports leave the shared view unchanged. A Follower presses **Add to room library**; its confirmation hides after five seconds.
 

@@ -405,6 +405,15 @@ Migration evidence (2026-10-16): the previous Supabase storage hostname was unav
 
 ## Verification approach
 
+### File library thumbnails
+
+- [x] Open the room library in a thumbnail grid by default, including original PDF, uploaded PDFs and image songs.
+- [x] Add an accessible Thumbnails/List toggle and retain the mode across refresh/polling.
+- [x] Preserve Master/controller shared selection and Follower private preview behavior.
+- [x] Bound PDF work, load previews lazily, release offscreen canvases and cancel on view change/close.
+- [x] Add selection/lifecycle/render regression tests and update README and architecture.
+- [ ] Verify actual thumbnail rendering, scrolling, rotation and two-device selection on phones.
+
 ### Compact page navigation and zoom controls
 
 - [x] Remove page input/current-total display; retain the first-page arrow before previous/next PDF navigation for Masters/controllers.
