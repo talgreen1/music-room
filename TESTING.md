@@ -47,7 +47,7 @@ Paths in the Unit column are under `src/`; Integration paths are under `scripts/
 | Screenshot overlap, stationary bars, uncertain joins and manifest limits | `stitch.test.ts` | Actual JPEG upload/download checks; stitch/crop visual checklist |
 | Follower imports, upload-only sessions and Master selection | `local-rooms.test.ts`, `song-library.test.ts` | `test-follower-uploads.mjs`; cloud files/sheets checks; menu/notice checklist |
 | Room upload attribution, reused codes and keep/delete-files lifecycle | `song-library.test.ts` | `test-room-files.mjs`, cloud PDF checks; room deletion dialog cancellation checklist |
-| Global/local search, names, Hebrew/niqqud, text, index links and deduplication | `search.test.ts` exercises the actual supplied PDF | Search dialog scope, keyboard dismissal and room switching checklist |
+| Global/local search, names, Hebrew/niqqud, text, index links and deduplication | `search.test.ts` exercises the actual supplied PDF; `search-dialog.test.ts` checks bold match-first headings and destination selection | Search dialog scope, keyboard dismissal, heading layout and room switching checklist |
 | Sharing and clipboard fallback | `clipboard.test.ts` verifies URL, modal focus, fallback and failure | Native phone share/cancel, QR scan and actual OS clipboard checklist |
 | Compact menus, separate upload pickers and library auto-refresh | Permissions covered by store/integration tests | Role/menu, picker and two-client library checklist |
 | Thumbnail-default library, list toggle, selection permissions and preview cleanup | `song-dialog.test.ts`, `library-thumbnails.test.ts` | Real PDF/image appearance and phone scrolling acceptance below; isolated DOM/render mocks do not prove actual canvas layout |
@@ -78,6 +78,11 @@ Expected permission-denied warnings are assertions that forbidden writes failed.
 Local tests cannot prove Firebase/Supabase authorization or real-network latency.
 
 ## Browser and physical-phone acceptance
+
+Search result headings: `search-dialog.test.ts` verifies bold matched text before
+file/page details, Hebrew text direction, filename/title matches, safe text rendering
+and unchanged destination selection. Confirm on a phone that long Hebrew song titles
+remain readable above the secondary file/page line; this visual check is pending.
 
 ### File chooser thumbnails
 

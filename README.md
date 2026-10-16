@@ -345,6 +345,8 @@ Use the Master header search icon or **Search songs** in Settings to search the 
 
 Master/controller search selections update the room for everyone. Settings results open a private preview. If both an index link and song-page text match, only the song-page result is shown. Repeated index links to the same destination are collapsed; distinct text occurrences remain available.
 
+Search results lead with the matching song text in bold, with the file name and page beneath it. Name-only matches lead with the matching title or original filename. Selecting a result still opens the same file and page.
+
 `src/search.ts` handles matching and result coordinates; `src/pdf-search.ts` extracts PDF.js text and internal link destinations without rendering canvases; `src/search-dialog.ts` handles scope, progress, cancellation and opening results. Matching ignores case, accents and Hebrew niqqud. New uploads retain original file names even when renamed; older entries use their title and, for PDFs, URL basename.
 
 PDFs are searched sequentially on the device. Names appear immediately; text results appear after each PDF finishes. The first search downloads the PDFs; completed text indexes are cached in IndexedDB for up to 24 hours, capped at 20 PDFs. Storage restrictions fall back to extracting again. Stop or closing the dialog cancels extraction. Search adds no cloud service or server text index.
