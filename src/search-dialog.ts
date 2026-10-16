@@ -1,5 +1,5 @@
 import { isPdfFile, type SharedFile } from './sheets';
-import { nameResult, textResults, normalizeSearch, type SearchResult } from './search';
+import { nameResult, textResults, normalizeSearch, matchesSearch, type SearchResult } from './search';
 import { searchPdfIndex } from './pdf-search';
 export interface SearchOptions {
   files(): Promise<SharedFile[]>;
@@ -34,9 +34,10 @@ export function showSearchDialog(options: SearchOptions): () => void {
       const batch = document.createDocumentFragment();
       for (const result of results) {
         count++; const button = document.createElement('button'); button.className = 'secondary search-result';
-        const title = document.createElement('strong'); title.dir = 'auto'; title.textContent = `${result.file.title} | ${result.kind === 'name' ? 'File name' : `Page ${result.location.page}`}`;
-        const snippet = document.createElement('span'); snippet.dir = 'auto'; snippet.textContent = result.snippet;
-        button.append(title, snippet);
+        const title = document.createElement('strong'); title.dir = 'auto';
+        title.textContent = result.kind === 'name' && matchesSearch(result.file.title, term) ? result.file.title : result.snippet;
+        const details = document.createElement('span'); details.dir = 'auto'; details.textContent = `${result.file.title} | ${result.kind === 'name' ? 'File name' : `Page ${result.location.page}`}`;
+        button.append(title, details);
         button.onclick = async () => {
           if (opening) return; opening = true; controller?.abort(); stop.hidden = true;
           list.querySelectorAll('button').forEach(element => element.disabled = true);
