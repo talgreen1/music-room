@@ -1,0 +1,14 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "music-room-files",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "vars": {
+    "FIREBASE_PROJECT_ID": "talgreen-music-room",
+    "FIREBASE_DATABASE_URL": "https://talgreen-music-room-default-rtdb.europe-west1.firebasedatabase.app",
+    "GITHUB_REPOSITORY": "talgreen1/music-room-files",
+    "PUBLIC_ORIGIN": "https://music-room-files.talgreen1.workers.dev",
+    "ALLOWED_ORIGINS": "https://talgreen-music-room.web.app,https://talgreen-music-room.firebaseapp.com,http://localhost:5173"
+  }
+}

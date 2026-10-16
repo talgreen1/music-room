@@ -53,12 +53,14 @@ Paths in the Unit column are under `src/`; Integration paths are under `scripts/
 | Home explainer link and Hebrew portrait animation | `explainer.test.ts` tests the shipped player with controlled clock/audio | Home/back navigation and visual/music checklist |
 | Autoplay, reduced motion, pause/seek/stop, mute/volume and late audio races | `explainer.test.ts` | Actual browser audio, mobile autoplay and visibility checklist |
 | Production configuration and hosting | Type check and regular build in CI | Deployment build rejects missing Firebase/emulator configuration; release HTTP and cloud checks |
+| GitHub uploads, URL validation, Settings deletion and legacy fallback | `github-storage.test.ts` | `storage-worker/storage.test.ts` runs the real Worker runtime with isolated Firebase/GitHub upstreams; actual-service and phone checks below |
 
 ## Cloud checks
 
 Cloud checks are deliberately outside CI. They need ignored deployment environment
-configuration, Firebase anonymous/Settings authentication, deployed database rules
-and configured Supabase policies. Run them sequentially in a controlled session:
+configuration, Firebase anonymous/Settings authentication and deployed database rules.
+GitHub storage uses `test-cloud-github-storage.mjs`; the older commands below require
+configured Supabase policies. Run relevant checks sequentially in a controlled session:
 
 ```powershell
 node --use-system-ca scripts/test-cloud-rooms.mjs
@@ -75,6 +77,56 @@ Expected permission-denied warnings are assertions that forbidden writes failed.
 Local tests cannot prove Firebase/Supabase authorization or real-network latency.
 
 ## Browser and physical-phone acceptance
+
+### GitHub storage migration checks
+
+`storage-worker/storage.test.ts` bundles the production Worker and runs it in
+Miniflare/workerd. Only upstream Firebase/GitHub HTTP responses are isolated. It
+checks signed versus forged/expired/wrong-project identities, own namespaces,
+active-room and Settings upload permissions, stream length/header validation,
+immutable conflicts, exact public bytes, secret-free CDN requests and deletion
+retention. `src/github-storage.test.ts` verifies provider opt-in, request scope,
+returned URL validation and rejecting mixed/unrelated deletion paths. These tests
+do not establish live GitHub/Cloudflare availability or production Database rules.
+
+After deploying the Worker and Database rules, configure its allowed origin with
+`scripts/configure-github-storage.mjs`, then run:
+
+```powershell
+node --use-system-ca scripts/test-cloud-github-storage.mjs
+```
+
+This check creates its own room, anonymous identities and PDF/JPEG assets, verifies
+Master/Follower/Settings imports and permissions, and removes its fixtures in a
+finally block. It does not change the global default or existing rooms. Review any
+cleanup failure before release. The migration tool is separate and intentionally
+changes catalog/default/original descriptors only with `--apply`; its default mode
+backs up bytes/metadata under ignored `.local-data/github-migration/`. Run migration
+in a maintenance session without concurrent file/default edits. Verify SHA-256
+and the saved `metadata.json`/`uploaded.json`/`changes.json` before retiring Supabase.
+
+- [x] Live Worker/rules: actual-service storage check passes, including the full songbook PDF, and its disposable files, room and identities are cleaned (2026-10-16).
+- [x] Migration: user-supplied local original backed up and copied hashes match; default preserved; zero visible catalog files required migration. Existing room descriptors remain unchanged (2026-10-16).
+- [ ] Android/iPhone: Master, Follower and Settings upload PDF/images; a large PDF succeeds within Free Worker limits; stitching and private previews still work.
+- [ ] Follower import leaves the shared view unchanged; Master/controller selection appears on both phones and files remain available in new rooms.
+- [ ] Settings replaces original, changes default, deletes unused files and defers deletion of files still in active rooms; search reads migrated PDFs.
+- [ ] After all old rooms expire, new rooms and file previews work without requesting Supabase URLs.
+
+Actual-service upload/permission/full-PDF checks and the supplied-original migration
+passed on 2026-10-16. The deployed original returned HTTP 206 with exactly 1,024
+requested bytes and CORS enabled. The cloud control regression also passed after
+the rules update. The final successful cloud run cleaned its disposable files,
+room and identities; earlier network-interrupted runs left no catalog files, but
+may have left temporary anonymous authentication identities. The previous Supabase
+host was unavailable, so old hosted bytes could not be compared with the user's
+replacement. Existing rooms were not mutated; their previous host must be available
+to render old URLs. Physical-phone/UI acceptance has not yet been run. Isolated
+Worker tests, pure migration-plan regressions in `storage-worker/migration.test.ts`
+and local integration are evidence only for their covered paths. Migration-plan
+tests cover default mapping, original versioning, image geometry/order, preserved
+attribution and rejecting incomplete or foreign-provider copies.
+
+### General phone acceptance
 
 Use a Master and Follower with independent tab identities. Test Android and iPhone
 where available. Use the deployed HTTPS app for native sharing; LAN HTTP can be

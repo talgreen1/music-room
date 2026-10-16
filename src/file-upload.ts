@@ -1,8 +1,9 @@
 import type { User } from 'firebase/auth';
 import { validatePdfUpload } from './songbook';
+import { storageOrigin, uploadGitHubFile } from './github-storage';
 
 /** Both upload entry points use immutable files in the same public library bucket. */
-export async function uploadLibraryPdf(file: File, id: string, user: User | null, localPath?: string, token?: string): Promise<string> {
+export async function uploadLibraryPdf(file: File, id: string, user: User | null, localPath?: string, token?: string, roomCode?: string): Promise<string> {
   if (!/^[a-f0-9]{32}$/.test(id)) throw new Error('Invalid file ID.');
   validatePdfUpload(file.size, new Uint8Array(await file.slice(0, 1024).arrayBuffer()));
   if (localPath) {
@@ -10,6 +11,10 @@ export async function uploadLibraryPdf(file: File, id: string, user: User | null
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'PDF upload failed.');
     return result.pdfUrl;
+  }
+  if (storageOrigin()) {
+    if (!user) throw new Error('Sign in before uploading.');
+    return uploadGitHubFile(file, id, 'document.pdf', user, roomCode);
   }
   const url = import.meta.env.VITE_SUPABASE_URL, key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key || !user) throw new Error('Sign in and configure PDF storage.');

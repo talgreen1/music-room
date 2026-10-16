@@ -5,6 +5,7 @@ import { availableSongs, type SavedSong } from './song-library';
 import { validateFile, type SharedFile } from './sheets';
 import { roomCode, normalizePosition, type Room, type Position } from './model';
 import { uploadLibraryPdf } from './file-upload';
+import { storageOrigin, uploadGitHubFile } from './github-storage';
 import { validateSongbook } from './songbook';
 const env = import.meta.env;
 let emulatorsConnected = false;
@@ -265,7 +266,7 @@ export class RoomService {
   async uploadPdf(file: File, id: string): Promise<string> {
     this.requireUploadRoom();
     const user = this.db ? getAuth(getApps().find(app => app.name === '[DEFAULT]')!).currentUser : null;
-    return uploadLibraryPdf(file, id, user, localServerConfigured ? `/api/local-rooms/${this.code}/pdfs` : undefined, this.uploadToken || undefined);
+    return uploadLibraryPdf(file, id, user, localServerConfigured ? `/api/local-rooms/${this.code}/pdfs` : undefined, this.uploadToken || undefined, this.code);
   }
   async uploadSegment(blob: Blob, sheetId: string, index: number) {
     this.requireUploadRoom();
@@ -276,9 +277,10 @@ export class RoomService {
     }
     if (!this.db) throw new Error('Screenshot sharing requires the local server or Firebase.');
     const url = env.VITE_SUPABASE_URL, key = env.VITE_SUPABASE_PUBLISHABLE_KEY;
-    if (!url || !key) throw new Error('Screenshot storage has not been configured.');
     const user = getAuth(getApps().find(app => app.name === '[DEFAULT]')!).currentUser;
     if (!user) throw new Error('Reconnect to the room.');
+    if (storageOrigin()) return uploadGitHubFile(blob, sheetId, `${index}.jpg`, user, this.code);
+    if (!url || !key) throw new Error('Screenshot storage has not been configured.');
     const filename = `${this.uid}/${sheetId}/${index}.jpg`;
     const response = await fetch(`${url}/storage/v1/object/room-sheets/${filename}`, { method: 'POST', headers: { apikey: key, Authorization: `Bearer ${await user.getIdToken()}`, 'Content-Type': 'image/jpeg', 'x-upsert': 'false' }, body: blob });
     if (!response.ok) throw new Error('Screenshot upload failed. Check the room-sheets bucket and upload policy.');
