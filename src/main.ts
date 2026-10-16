@@ -7,6 +7,7 @@ import { RoomService, cloudConfigured, localServerConfigured, songbook, type Con
 import { validCode, type Room } from './model';
 import { SongbookViewer } from './viewer';
 import { PositionPublisher } from './sync';
+import { createViewerToolbar } from './viewer-toolbar';
 import { PdfScrollbar } from './scrollbar';
 import { FollowerSync, canInteractWithDocument } from './follower-sync';
 import { showSettings, showSettingsDialog } from './settings';
@@ -75,7 +76,7 @@ function home() {
 
 async function openRoom(code: string) {
   cleanup(); const token = generation; controlsRoom = false; owner = false; following = true; connection = 'Reconnecting…';
-  app.innerHTML = `<main class="session"><header class="room-header"><button id="leave" class="icon-button" aria-label="Leave room">←</button><div class="room-identity"><span class="small-label">ROOM ${safe(code)}</span><strong id="role">Joining your group…</strong></div><span id="connection" class="connection" role="status">Reconnecting…</span><button id="share" class="icon-button" aria-label="Share room" title="Share room">${shareIcon}</button></header>${!cloudConfigured ? localServerConfigured ? '<div class="demo-bar">LOCAL DEVELOPMENT · Shared across browsers</div>' : '<div class="demo-bar">BROWSER-ONLY DEMO · Same-browser tabs only</div>' : ''}<div id="notice" class="notice room-notice" role="alert" hidden></div><div id="pdf" class="pdf-host" tabindex="0" aria-label="Songbook"></div><nav class="toolbar" aria-label="Songbook controls"><button id="previous" class="icon-button" aria-label="Previous page">‹</button><form id="page-form"><label class="sr-only" for="page">Page number</label><input id="page" type="number" min="1" value="1" aria-label="Page number"/><span id="count"> / —</span></form><button id="next" class="icon-button" aria-label="Next page">›</button><div class="toolbar-divider"></div><button id="zoom-out" class="icon-button" aria-label="Zoom out">−</button><span id="zoom">100%</span><button id="zoom-in" class="icon-button" aria-label="Zoom in">+</button></nav></main><dialog id="share-dialog"><form method="dialog"><button class="dialog-close icon-button" aria-label="Close">×</button></form><p class="eyebrow">INVITE YOUR GROUP</p><h2>Room ${safe(code)}</h2><canvas id="qr"></canvas><p id="share-url"></p><div class="share-actions"><button id="native-share" class="icon-button" aria-label="Share room link" title="Share room link">${shareIcon}</button><button id="copy" class="icon-button" aria-label="Copy room link" title="Copy room link">${copyIcon}</button></div><p id="copy-status" role="status"></p></dialog>`;
+  app.innerHTML = `<main class="session"><header class="room-header"><button id="leave" class="icon-button" aria-label="Leave room">←</button><div class="room-identity"><span class="small-label">ROOM ${safe(code)}</span><strong id="role">Joining your group…</strong></div><span id="connection" class="connection" role="status">Reconnecting…</span><button id="share" class="icon-button" aria-label="Share room" title="Share room">${shareIcon}</button></header>${!cloudConfigured ? localServerConfigured ? '<div class="demo-bar">LOCAL DEVELOPMENT · Shared across browsers</div>' : '<div class="demo-bar">BROWSER-ONLY DEMO · Same-browser tabs only</div>' : ''}<div id="notice" class="notice room-notice" role="alert" hidden></div><div id="pdf" class="pdf-host" tabindex="0" aria-label="Songbook"></div><nav class="toolbar" aria-label="Songbook controls"></nav></main><dialog id="share-dialog"><form method="dialog"><button class="dialog-close icon-button" aria-label="Close">×</button></form><p class="eyebrow">INVITE YOUR GROUP</p><h2>Room ${safe(code)}</h2><canvas id="qr"></canvas><p id="share-url"></p><div class="share-actions"><button id="native-share" class="icon-button" aria-label="Share room link" title="Share room link">${shareIcon}</button><button id="copy" class="icon-button" aria-label="Copy room link" title="Copy room link">${copyIcon}</button></div><p id="copy-status" role="status"></p></dialog>`;
   $('#leave').onclick = () => { history.pushState({}, '', '/'); home(); };
   const settingsButton = document.createElement('button');
   settingsButton.className = 'icon-button'; settingsButton.textContent = '⚙';
@@ -120,12 +121,6 @@ async function openRoom(code: string) {
   const pdfFrame = document.createElement('div'); pdfFrame.className = 'pdf-frame';
   $('#pdf').before(pdfFrame); pdfFrame.append($('#pdf'));
   scrollbar = new PdfScrollbar($('#pdf')); pdfFrame.append(scrollbar.element);
-  const firstPage = document.createElement('button');
-  firstPage.id = 'first-page'; firstPage.className = 'icon-button';
-  firstPage.setAttribute('aria-label', 'Jump to page 1'); firstPage.title = 'Jump to page 1';
-  firstPage.textContent = '↑'; $('.toolbar').prepend(firstPage);
-  const followerPage = document.createElement('span'); followerPage.id = 'follower-page'; followerPage.textContent = 'Page 1';
-  $('.toolbar').append(followerPage);
   viewer = new SongbookViewer($('#pdf'));
   viewer.onLinkError = message;
   const syncControl = document.createElement('label'); syncControl.className = 'sync-control'; syncControl.hidden = true;
@@ -205,10 +200,16 @@ async function openRoom(code: string) {
   };
   pdfButton.onclick = async () => { pdfButton.disabled = true; try { await service.changeSheet(); } catch (error) { message(errorText(error)); } finally { if (token === generation) updateFollow(); } };
   publisher = new PositionPublisher(position => service.publish(position), error => message(errorText(error)));
-  viewer.onPage = page => { $<HTMLInputElement>('#page').value = String(page); followerPage.textContent = room?.sheet && !isPdfFile(room.sheet) ? room.sheet.title : `Page ${page} / ${viewer?.count || '…'}`; };
+  const controls = createViewerToolbar({
+    position: () => viewer?.position(), count: () => viewer?.count || 0,
+    canInteract: () => independent(),
+    canNavigate: () => controlsRoom && !(room?.sheet && !isPdfFile(room.sheet)),
+    jump: page => jump(page), zoom: value => viewer?.setZoom(value)
+  });
+  syncControl.after(controls.element);
   viewer.onPosition = (position, remote) => {
     scrollbar?.refresh();
-    $('#zoom').textContent = `${Math.round(position.zoom * 100)}%`;
+    controls.refresh();
     if (remote) { lastPublished = ''; return; }
     if (!controlsRoom || !ready || connection !== 'Connected') return;
     const key = `${position.page}:${position.offset.toFixed(4)}:${(position.horizontal || 0).toFixed(4)}:${position.zoom}`;
@@ -216,12 +217,6 @@ async function openRoom(code: string) {
   };
   const independent = () => canInteractWithDocument(ready, controlsRoom, following);
   const jump = (page: number) => { if (independent() && ready && Number.isFinite(page)) { viewer?.jump(page); const p = viewer?.position(); if (controlsRoom && p) publishPosition(p, true); } };
-  firstPage.onclick = () => jump(1);
-  $('#previous').onclick = () => jump(Number($<HTMLInputElement>('#page').value) - 1);
-  $('#next').onclick = () => jump(Number($<HTMLInputElement>('#page').value) + 1);
-  $<HTMLFormElement>('#page-form').onsubmit = event => { event.preventDefault(); jump(Number($<HTMLInputElement>('#page').value)); $<HTMLInputElement>('#page').blur(); };
-  $('#zoom-out').onclick = () => { if (independent()) viewer?.setZoom((viewer.position()?.zoom || 1) - .1); };
-  $('#zoom-in').onclick = () => { if (independent()) viewer?.setZoom((viewer.position()?.zoom || 1) + .1); };
   function updateFollow() {
     if (scrollbar) scrollbar.element.hidden = !controlsRoom;
     scrollbar?.setEnabled(ready && controlsRoom);
@@ -241,16 +236,10 @@ async function openRoom(code: string) {
     requestsButton.innerHTML = `<svg aria-hidden="true" width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="7" r="4"/><path d="M1 21v-2a7 7 0 0 1 14 0v2m1-10 2 2 5-5"/></svg><span class="request-count">${requests}</span>`;
     $('#pdf').classList.toggle('locked', !independent());
     $('#pdf').classList.toggle('following', !controlsRoom && following);
-    for (const selector of ['#first-page', '#previous', '#next', '#page', '#zoom-out', '#zoom-in']) ($<HTMLButtonElement | HTMLInputElement>(selector)).disabled = !ready || !independent();
-    for (const selector of ['#first-page', '#previous', '#next']) $(selector).hidden = !controlsRoom;
-    for (const selector of ['#zoom-out', '#zoom-in', '.toolbar-divider']) $(selector).hidden = true;
-    $('#zoom').hidden = controlsRoom;
-    $('#page-form').hidden = !controlsRoom || Boolean(room?.sheet && !isPdfFile(room.sheet));
-    for (const selector of ['#previous', '#next']) $(selector).hidden = !controlsRoom || Boolean(room?.sheet && !isPdfFile(room.sheet));
+    controls.refresh();
     songsButton.hidden = false; songsButton.textContent = controlsRoom ? 'Select file/song' : 'View files/songs'; songsButton.disabled = !ready || connection !== 'Connected';
     screenshots.hidden = false; screenshots.disabled = !ready || connection !== 'Connected';
     pdfButton.hidden = !controlsRoom || !room?.sheet; pdfButton.disabled = !ready || connection !== 'Connected';
-    $('#follower-page').hidden = controlsRoom;
   }
   updateFollow();
   const recovery = document.createElement('section');
@@ -303,7 +292,7 @@ async function openRoom(code: string) {
         if (token !== generation || revision !== sourceRevision) return;
         loadedSource = source; loadingSource = '';
         publisher = new PositionPublisher(position => service.publish(position), error => message(errorText(error)));
-        ready = true; $('#count').textContent = ` / ${viewer!.count}`; $<HTMLInputElement>('#page').max = String(viewer!.count);
+        ready = true;
         viewer!.follow(room!.position, true, true); updateFollow();
       } catch (error) { if (token !== generation || revision !== sourceRevision) return; unavailable('Could not open the songbook', `${errorText(error)} Try again, or return home to join another room.`); }
     } else if (ready && (wasControl !== controlsRoom || service.shouldFollow(next.position, following)) && ((next.position.sequence || 0) > lastSequence || wasControl !== controlsRoom)) {

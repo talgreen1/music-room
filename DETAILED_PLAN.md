@@ -405,6 +405,13 @@ Migration evidence (2026-10-16): the previous Supabase storage hostname was unav
 
 ## Verification approach
 
+### Compact page navigation and zoom controls
+
+- [x] Remove page input/current-total display; retain the first-page arrow before previous/next PDF navigation for Masters/controllers.
+- [x] Add compact minus/percentage/plus document zoom; preserve pinch, shared publishing and private Follower permissions.
+- [x] Cover current-page navigation, repeated presses, zoom limits, permission changes and unloaded state with regression tests; update documentation.
+- [ ] Verify Android/iPhone layout, repeated navigation and synchronized button/pinch zoom on real devices.
+
 Use focused automated tests for coordinate math, throttling/coalescing, stale-message handling, and recovery state transitions. Use Firebase emulator tests for the authorization boundary and concurrent room creation. Use browser tests for the create/join/view/follow flows, and manual physical-device tests for scrolling, memory, orientation, and mobile background behavior.
 
 Do not treat a successful build or local BroadcastChannel demo as proof of cross-device reliability. Completion evidence should state what was tested and its limits. Any newly discovered defect gets a story or remains an explicit blocker to the relevant gate.
