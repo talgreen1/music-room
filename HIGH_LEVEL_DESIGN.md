@@ -166,6 +166,17 @@ Firebase rule and transaction behavior references: [Realtime Database reads/writ
 
 ## 11. Future extension boundaries
 
+### Library thumbnail previews
+
+The room library uses a thumbnail grid by default and retains a text-list toggle.
+`library-thumbnails.ts` lazily observes visible PDF cards and renders only page 1
+through the existing PDF.js compatibility worker. At most two PDF jobs run; bounded
+canvases are released offscreen and loading/render tasks are cancelled on rebuild or
+close. Images use the first saved JPEG tile with native lazy loading. Previews are
+ephemeral browser UI, not new Storage objects or realtime data. `song-dialog.ts`
+keeps source selection/private preview permissions identical across both views,
+retains the view during catalog refresh and guards callbacks after dialog closure.
+
 ### GitHub storage bridge
 
 `src/github-storage.ts` selects the Cloudflare upload endpoint for new imports when a public origin is configured. PDFs and bounded JPEG tiles stream through `storage-worker/src/index.ts` to private GitHub release attachments; the app repository never contains uploaded binaries or credentials. Attachments are grouped by two hexadecimal file-ID characters (256 releases) and immutable names include Firebase UID/file ID. Download URLs contain the GitHub asset ID and verified logical path, avoiding a separate mapping database. The Worker checks asset metadata before downloads, follows only trusted GitHub HTTPS CDN redirects, and never forwards the repository secret to the CDN. Downloads are public by URL with CORS and one-hour browser caching.

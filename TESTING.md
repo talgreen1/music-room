@@ -50,6 +50,7 @@ Paths in the Unit column are under `src/`; Integration paths are under `scripts/
 | Global/local search, names, Hebrew/niqqud, text, index links and deduplication | `search.test.ts` exercises the actual supplied PDF | Search dialog scope, keyboard dismissal and room switching checklist |
 | Sharing and clipboard fallback | `clipboard.test.ts` verifies URL, modal focus, fallback and failure | Native phone share/cancel, QR scan and actual OS clipboard checklist |
 | Compact menus, separate upload pickers and library auto-refresh | Permissions covered by store/integration tests | Role/menu, picker and two-client library checklist |
+| Thumbnail-default library, list toggle, selection permissions and preview cleanup | `song-dialog.test.ts`, `library-thumbnails.test.ts` | Real PDF/image appearance and phone scrolling acceptance below; isolated DOM/render mocks do not prove actual canvas layout |
 | Home explainer link and Hebrew portrait animation | `explainer.test.ts` tests the shipped player with controlled clock/audio | Home/back navigation and visual/music checklist |
 | Autoplay, reduced motion, pause/seek/stop, mute/volume and late audio races | `explainer.test.ts` | Actual browser audio, mobile autoplay and visibility checklist |
 | Production configuration and hosting | Type check and regular build in CI | Deployment build rejects missing Firebase/emulator configuration; release HTTP and cloud checks |
@@ -77,6 +78,18 @@ Expected permission-denied warnings are assertions that forbidden writes failed.
 Local tests cannot prove Firebase/Supabase authorization or real-network latency.
 
 ## Browser and physical-phone acceptance
+
+### File chooser thumbnails
+
+- [ ] On desktop, Android and iPhone, open Select file/song: thumbnails are the default, the original book is included, and PDF first pages/image first tiles are recognizable with readable titles.
+- [ ] Switch to List and back; neither changes the shared song. Refresh/new uploads retain the current mode. Close/reopen restores the thumbnail default.
+- [ ] Select a thumbnail as Master/controller and confirm both devices switch. As a Follower, selection opens a private preview and never changes the room.
+- [ ] Scroll a long library, close during PDF loading, switch views rapidly and rotate the phone. Confirm no stale previews, clipping or growing canvas/worker usage. Network errors leave names selectable.
+
+These visual/physical-device checks have not yet been run. Automated DOM tests cover
+toggle/default behavior, refresh/polling, selection permissions, close races and cleanup.
+Renderer tests cover bounded first-page geometry, lazy loading, two-job concurrency,
+offscreen release, load cancellation, error fallback and late completion suppression.
 
 ### GitHub storage migration checks
 
