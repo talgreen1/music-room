@@ -138,6 +138,8 @@ Choosing a different file as Master atomically updates its manifest and initial 
 
 ## 8. Interface
 
+`vertical-scrollbar.ts` owns the room-local **Show vertical scrollbar** checkbox, hidden from read-only Followers and unchecked on room entry. It controls the existing `scrollbar.ts` track without adding shared state or changing write permissions. Hiding the track disables keyboard/pointer interaction and cancels an active drag. Source loading disables the selected track until ready; control loss hides the track and toggle, retaining the local choice for control restoration. Native room-view scrollbars are hidden on both axes; there is no horizontal track.
+
 Use a quiet dark background, high-contrast text, and the original light PDF pages as the focus. Home shows Create Room and Join Room. An active room has a compact header for code, role, sharing, and connection status, with the viewer occupying the remaining screen.
 
 Use compact 32 CSS px header/toolbar controls as requested to maximize PDF space, while preserving accessible labels, keyboard support, safe-area insets, and portrait/landscape layouts. Followers have Master sync as their first bottom-toolbar element with compact zoom controls and no page counter or vertical scrollbar. Synced Followers cannot use zoom buttons; explicit private browsing enables them. Masters/controllers have a first-page arrow followed by previous/next page navigation plus zoom buttons and percentage. Toolbar actions read the latest viewer position rather than a page input; they retain the existing publish/permission pipeline. The Master sees **Master**, the draggable scrollbar, and the navigation/sharing controls. There is no separate Follower button row.
