@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite';
 import { localRoomsPlugin } from './server/local-rooms';
+import { validateGitHubStorageOrigin } from './src/github-storage';
 
 export default defineConfig(({ mode }) => {
   if (mode === 'deployment') {
@@ -8,6 +9,7 @@ export default defineConfig(({ mode }) => {
     if (env.VITE_USE_FIREBASE_EMULATORS === 'true' || required.some(key => !env[key])) {
       throw new Error('Deployment requires complete cloud Firebase configuration and emulator mode disabled. Set .env.deployment.local before deploying.');
     }
+    validateGitHubStorageOrigin(env.VITE_GITHUB_STORAGE_URL);
   }
   return {
     plugins: [localRoomsPlugin({ ...loadEnv(mode, process.cwd(), ''), ...process.env } as Record<string, string>)],

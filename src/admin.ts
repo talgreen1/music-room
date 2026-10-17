@@ -3,10 +3,10 @@ import { getAuth, signInWithEmailAndPassword, signOut, inMemoryPersistence, setP
 import { getDatabase, get, ref, remove, set, update, serverTimestamp, runTransaction } from 'firebase/database';
 import { cloudConfigured, localServerConfigured, songbook } from './rooms';
 import { validateSongbook, type Songbook } from './songbook';
-import { validateFile, isPdfFile, fileUrls, MAX_IMAGE_BYTES, type SharedFile } from './sheets';
+import { validateFile, fileUrls, MAX_IMAGE_BYTES, type SharedFile } from './sheets';
 import { availableSongs, unusedDeletedSongs, roomUploads, type SavedSong } from './song-library';
 import { uploadLibraryPdf } from './file-upload';
-import { storageOrigin, uploadGitHubFile, deleteGitHubFiles } from './github-storage';
+import { uploadGitHubFile, deleteGitHubFiles } from './github-storage';
 import type { Room } from './model';
 import { settingsCredential } from './settings-password.mjs';
 
@@ -56,14 +56,9 @@ export class SettingsService {
       const response = await fetch('/api/admin/images', { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: blob });
       const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Screenshot upload failed.'); return result.url;
     }
-    const url = import.meta.env.VITE_SUPABASE_URL, key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, user = this.cloud().auth.currentUser;
+    const user = this.cloud().auth.currentUser;
     if (!user) throw new Error('Sign in to Settings.');
-    if (storageOrigin()) return uploadGitHubFile(blob, sheetId, `${index}.jpg`, user);
-    if (!url || !key) throw new Error('Configure screenshot storage.');
-    const filename = `${user.uid}/${sheetId}/${index}.jpg`;
-    const response = await fetch(`${url}/storage/v1/object/room-sheets/${filename}`, { method: 'POST', headers: { apikey: key, Authorization: `Bearer ${await user.getIdToken()}`, 'Content-Type': 'image/jpeg', 'x-upsert': 'false' }, body: blob });
-    if (!response.ok) throw new Error('Screenshot upload failed. Check Storage configuration.');
-    return `${url}/storage/v1/object/public/room-sheets/${filename}`;
+    return uploadGitHubFile(blob, sheetId, `${index}.jpg`, user);
   }
   async saveSong(sheet: SharedFile): Promise<void> {
     const song = validateFile(sheet);
@@ -94,17 +89,7 @@ export class SettingsService {
     const activeIds = new Set(Object.values(rooms).filter(room => room.expiresAt > Date.now()).flatMap(room => room.sheet ? [room.sheet.id] : []));
     for (const song of unusedDeletedSongs(records, activeIds)) {
       if (!auth.currentUser) throw new Error('Sign in to Settings to clean up files.');
-      if (await deleteGitHubFiles(fileUrls(song), song.ownerId, song.id, auth.currentUser)) {
-        await remove(ref(db, `songs/${song.id}`));
-        continue;
-      }
-      const url = import.meta.env.VITE_SUPABASE_URL, key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-      if (!url || !key || !auth.currentUser) throw new Error('Song removed from the library. Image cleanup requires configured Storage and a Settings login.');
-      const bucket = isPdfFile(song) ? 'room-pdfs' : 'room-sheets';
-      const prefix = `${url}/storage/v1/object/public/${bucket}/`;
-      const prefixes = fileUrls(song).map(fileUrl => { if (!fileUrl.startsWith(`${prefix}${song.ownerId}/${song.id}/`)) throw new Error('Invalid saved song storage path.'); return fileUrl.slice(prefix.length); });
-      const response = await fetch(`${url}/storage/v1/object/${bucket}`, { method: 'DELETE', headers: { apikey: key, Authorization: `Bearer ${await auth.currentUser.getIdToken()}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ prefixes }) });
-      if (!response.ok) throw new Error('Song removed from the library. Image cleanup failed; refresh to retry after checking Storage permissions.');
+      if (!await deleteGitHubFiles(fileUrls(song), song.ownerId, song.id, auth.currentUser)) throw new Error('File hidden. Cleanup supports only the configured GitHub storage; original bytes and catalog metadata were retained.');
       await remove(ref(db, `songs/${song.id}`));
     }
   }

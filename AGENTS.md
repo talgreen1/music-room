@@ -94,17 +94,17 @@ for architecture, [DETAILED_PLAN.md](DETAILED_PLAN.md) for stories, and
 ## Backends, persistence and secrets
 
 - Production: Firebase Hosting, anonymous Firebase Authentication and Realtime
-  Database. With `VITE_GITHUB_STORAGE_URL`, a Cloudflare Worker streams uploads to
-  private GitHub release assets and serves public URLs. Without it, legacy Supabase
-  public `room-pdfs`/`room-sheets` buckets store uploads. GitHub credentials belong
+  Database. Cloud uploads/deletions use only the Cloudflare Worker configured by
+  required `VITE_GITHUB_STORAGE_URL`, backed by private GitHub release assets.
+  Missing/invalid origins must fail explicitly, including deployment builds. GitHub credentials belong
   only in Worker secrets. Keep `/storageConfig/githubOrigin` and URL rules aligned;
   deploy/verify Worker and rules before frontend cutover. Keep Supabase bytes/URLs
   available until pinned rooms expire; migration must back up and verify bytes first.
   Legacy `songbooks` URLs must continue working. Avoid introducing paid services
   or requiring a credit card without an explicit user decision.
-- `database.rules.json` is the cloud authorization/schema boundary. Storage SQL
-  policies in `supabase/` scope immutable inserts to the uploader UID and deletion
-  to Settings. Local join tokens initially grant upload-only access; owner/admin approval grants room control; cloud catalog creation
+- `database.rules.json` is the cloud authorization/schema boundary. The GitHub
+  Worker enforces immutable uploads in the uploader UID namespace and Settings-only
+  deletion. Supabase upload/delete fallback and setup policies are retired. Local join tokens initially grant upload-only access; owner/admin approval grants room control; cloud catalog creation
   requires an authenticated uploader's own namespace plus an active room code.
   Do not claim stronger invitation/membership authorization than implemented.
 - `server/local-rooms.ts` is Vite-only HTTP/SSE middleware; `server/song-library.ts`

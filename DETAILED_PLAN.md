@@ -403,6 +403,18 @@ Release evidence (2026-10-08): user confirmed Follower uploads locally. All 67 t
 
 Migration evidence (2026-10-16): the previous Supabase storage hostname was unavailable. The user supplied a local original PDF (14,276,162 bytes). A durable local backup and SHA-256-verified GitHub copy were created; the original descriptor now points to GitHub, with a new version. No saved catalog files required migration. Existing rooms and Supabase bytes were retained. Physical-phone acceptance remains outstanding.
 
+## GitHub-only cloud storage
+
+- [x] Remove Supabase upload/deletion fallback from PDF, room screenshot and Settings paths; keep local development storage.
+- [x] Require a valid GitHub Worker origin for cloud operations and deployment builds; preserve saved public URLs for rendering.
+- [x] Retire Supabase environment examples, setup policies and provider-specific cloud scripts; update current documentation and contributor guidance while retaining historical migration evidence.
+- [x] Cover GitHub-only routing, configuration failures, local uploads, deletion failures and active-room/non-GitHub retention with regressions.
+- [x] Verify actual-service GitHub imports/cleanup: PDF/JPEG uploads, exact downloads, immutable writes, Settings-only deletion and uploader permissions passed; disposable files, room and identities cleaned up (2026-10-17).
+- [x] Publish Hosting and verify the live JavaScript/CSS against deployment output (2026-10-17); no Worker/database rules changed.
+- [ ] Verify phone/network acceptance for the GitHub-only release.
+
+Verification (2026-10-17): type checking, all 150 tests, seven isolated integration checks, ordinary build and deployment build passed. Hosting is published; live JavaScript/CSS match deployment output byte-for-byte, with no Supabase storage API/configuration references. Historical URLs and Database URL compatibility remain, without any provider upload/deletion fallback. Actual-service GitHub checks passed and cleaned all disposable files, room and identities; physical-phone acceptance remains pending.
+
 ## Verification approach
 
 ### Master ownership recovery

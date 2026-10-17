@@ -13,13 +13,13 @@ export async function cloudRead(url, options = {}) {
 export async function storageSession() {
   const env = { ...loadEnv('deployment', process.cwd(), ''), ...process.env };
   if (!env.VITE_FIREBASE_API_KEY || !env.MUSIC_ADMIN_PASSWORD) throw new Error('Configure the ignored deployment environment and Settings password.');
+  const origin = (env.VITE_GITHUB_STORAGE_URL || '').replace(/\/$/, '');
+  if (!/^https:\/\/[A-Za-z0-9.-]+$/.test(origin)) throw new Error('Configure VITE_GITHUB_STORAGE_URL with a valid HTTPS Worker origin.');
   const response = await cloudRead(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${env.VITE_FIREBASE_API_KEY}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: env.VITE_ADMIN_EMAIL || 'settings@music-room.app', password: settingsCredential(env.MUSIC_ADMIN_PASSWORD), returnSecureToken: true })
   });
   if (!response.ok) throw new Error('Settings sign-in failed.');
   const { idToken: token, localId: uid } = await response.json();
-  const origin = (env.VITE_GITHUB_STORAGE_URL || 'https://music-room-files.talgreen1.workers.dev').replace(/\/$/, '');
-  if (!/^https:\/\/[A-Za-z0-9.-]+$/.test(origin)) throw new Error('Invalid Worker origin.');
   async function db(path, method = 'GET', body) {
     const send = method === 'GET' ? cloudRead : fetch;
     const response = await send(`${env.VITE_FIREBASE_DATABASE_URL.replace(/\/$/, '')}/${path}.json?auth=${encodeURIComponent(token)}`, {

@@ -4,7 +4,7 @@ A mobile browser songbook: the Master and approved Followers control the shared 
 
 Live app: [Music Room](https://talgreen-music-room.web.app). Create a room and share its link/code with another browser or phone; joining makes that participant a Follower. Local development also supports separate browsers and phones. Architecture is in [HIGH_LEVEL_DESIGN.md](HIGH_LEVEL_DESIGN.md); progress and remaining comprehensive device/recovery checks are in [DETAILED_PLAN.md](DETAILED_PLAN.md).
 
-This guide includes shared control and the GitHub storage migration, updated on 2026-10-16. GitHub storage is opt-in until its setup and live permission checks are complete.
+GitHub is the only supported cloud file storage provider. A Cloudflare Worker stores PDFs and screenshot tiles in private GitHub release assets. Firebase continues to host the app, authenticate participants and synchronize rooms. Local development without Firebase keeps files locally.
 
 GitHub storage is deployed and enabled on the live site as of 2026-10-16. Live upload/download and permission checks passed, including the full songbook, and room-controller permissions were rechecked. The original PDF was restored from the user's local copy, backed up and hash-verified on GitHub; no other catalog files needed migration. Create a fresh room to use the new original descriptor. Existing rooms keep their previously pinned URLs. Physical-phone acceptance of the new provider remains pending.
 
@@ -84,13 +84,12 @@ music-room/
 |   |-- test-follower-uploads.mjs, test-pdf-compat.mjs
 |   |-- test-shared-control.mjs, test-cloud-control.mjs
 |   |-- test-local-suite.mjs  # Isolated integration runner
-|   |-- test-cloud-rooms.mjs, test-cloud-settings.mjs
-|   |-- test-cloud-files.mjs, test-cloud-sheets.mjs
+|   |-- test-cloud-rooms.mjs, test-cloud-control.mjs
+|   |-- test-cloud-github-storage.mjs
 |   `-- setup-settings-admin.mjs
 |-- storage-worker/          # Cloudflare bridge to private GitHub release assets
 |   |-- src/                # Firebase token verification, retention and GitHub API
 |   `-- wrangler.jsonc      # Public settings only; GitHub token is a Worker secret
-|-- supabase/               # Legacy storage policies for retained Supabase URLs
 |   |-- files.sql            # Shared PDF bucket and UID-scoped policies
 |   |-- sheets.sql           # JPEG bucket and UID-scoped policies
 |   `-- storage.sql          # Legacy Settings PDF bucket
@@ -112,7 +111,7 @@ The original supplied PDF remains at the repository root. Its published copy is 
 
 ## Architecture
 
-The frontend is a TypeScript application built with Vite. PDF.js runs in each participant's browser using a separate worker. The viewer and worker use matching PDF.js compatibility (`legacy`) bundles so rendering does not depend on newer built-ins missing from some mobile browsers. Firebase Hosting serves the frontend, PDF.js worker and bundled PDF. When `VITE_GITHUB_STORAGE_URL` is configured, a Cloudflare Worker stores uploads as binary release attachments in a private GitHub repository and serves public file URLs. Otherwise cloud uploads use the legacy Supabase backend. Firebase Authentication supplies invisible anonymous identities for musicians and a separate password account for Settings; Realtime Database stores rooms, the original songbook descriptor, the reusable file catalog and the default file ID. Local development storage is unchanged.
+The frontend is a TypeScript application built with Vite. PDF.js runs in each participant's browser using a separate worker. The viewer and worker use matching PDF.js compatibility (`legacy`) bundles so rendering does not depend on newer built-ins missing from some mobile browsers. Firebase Hosting serves the frontend, PDF.js worker and bundled PDF. A Cloudflare Worker stores all cloud uploads as binary release attachments in a private GitHub repository and serves public file URLs. `VITE_GITHUB_STORAGE_URL` is required for cloud uploads and deployment; missing configuration fails explicitly. Firebase Authentication supplies invisible anonymous identities for musicians and a separate password account for Settings; Realtime Database stores rooms, the original songbook descriptor, the reusable file catalog and the default file ID. Local development storage is unchanged.
 
 ```mermaid
 flowchart LR
@@ -367,7 +366,7 @@ Sources and storyboard notes are in [public/explainer/README.md](public/explaine
 
 ## Deployment
 
-The frontend uses **Firebase Hosting**, anonymous Authentication, and Realtime Database in `europe-west1`, in the dedicated project `talgreen-music-room`. No billing upgrade was made. Manage usage at https://console.firebase.google.com/project/talgreen-music-room/overview. The bundled PDF is served by Hosting. Uploaded files use the configured GitHub Worker or legacy Supabase provider; Firebase Storage is not used. See the GitHub setup below before switching a production build.
+The frontend uses **Firebase Hosting**, anonymous Authentication, and Realtime Database in `europe-west1`, in the dedicated project `talgreen-music-room`. No billing upgrade was made. Manage usage at https://console.firebase.google.com/project/talgreen-music-room/overview. The bundled PDF is served by Hosting. Uploaded files use the GitHub Worker exclusively; Firebase Storage and Supabase upload/deletion APIs are not used. See the GitHub setup below for configuration.
 
 ### First-time setup on a machine
 
@@ -391,8 +390,7 @@ Skip copying the example if `.env.deployment.local` already exists, to preserve 
 | `VITE_FIREBASE_PROJECT_ID` | `talgreen-music-room` |
 | `VITE_USE_FIREBASE_EMULATORS` | Must be `false` for deployment |
 | `VITE_ADMIN_EMAIL` | Separate Settings account; defaults to `settings@music-room.app` |
-| `VITE_GITHUB_STORAGE_URL` | HTTPS origin of the configured GitHub storage Worker; selects GitHub for new uploads |
-| `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | Legacy uploads when no GitHub origin is set; retain during migration for deferred cleanup |
+| `VITE_GITHUB_STORAGE_URL` | Required HTTPS origin of the GitHub storage Worker; deployment rejects a missing or invalid origin |
 | `MUSIC_ADMIN_PASSWORD` | Server-only local Settings/provisioning/test value; never prefixed with `VITE_` |
 | `VITE_PDF_URL`, `VITE_PDF_VERSION`, `VITE_PDF_TITLE` | Optional songbook overrides |
 
@@ -411,7 +409,7 @@ node --use-system-ca scripts/test-cloud-rooms.mjs
 firebase.cmd deploy --only hosting --project talgreen-music-room
 ```
 
-Hosting automatically runs `build:deploy` before uploading `dist/`. This build refuses incomplete Firebase configuration and emulator mode, so it cannot silently publish the browser-only demo. `firebase.json` configures direct-link rewrites, immutable caching for generated assets, one-day PDF caching, and HTML revalidation. On systems without the `.cmd` wrappers, use `npm` and `firebase`.
+Hosting automatically runs `build:deploy` before uploading `dist/`. This build refuses incomplete Firebase configuration, missing/invalid GitHub Worker origins and emulator mode, so it cannot silently publish the browser-only demo. `firebase.json` configures direct-link rewrites, immutable caching for generated assets, one-day PDF caching, and HTML revalidation. On systems without the `.cmd` wrappers, use `npm` and `firebase`.
 
 After deployment, open the live site, create a fresh room, and join from a separate browser or phone. Check the PDF, connected status, scrolling/page jumps, locked synced Followers and explicit Master sync opt-out/rechecking. Local development room codes belong to the local server; create a new room on the deployed site for internet use.
 
@@ -426,14 +424,7 @@ node --use-system-ca scripts/test-cloud-rooms.mjs
 
 Verify the changed permissions before publishing any frontend that depends on them. The tracked configuration enables anonymous authentication for musicians and email/password authentication for the Settings account.
 
-For GitHub storage changes, deploy the Worker and database rules, configure `/storageConfig/githubOrigin`, then run `node --use-system-ca scripts/test-cloud-github-storage.mjs` before Hosting. That check never changes the global default. For legacy Supabase policy changes, apply the policies and database rules, then run the legacy checks:
-
-```powershell
-node --use-system-ca scripts/test-cloud-files.mjs
-node --use-system-ca scripts/test-cloud-sheets.mjs
-```
-
-These use real Firebase/Supabase and disposable fixtures. The PDF check temporarily changes the global default and restores it; run checks sequentially in a controlled session. Both remove their test rooms, records and bytes. They verify Master/Follower uploads, exact downloads, source selection, denied privileged writes and cleanup. Frontend-only changes need the regular type/test/build checks; do not run cloud mutation checks unnecessarily.
+For GitHub storage changes, deploy the Worker and any changed database rules, configure `/storageConfig/githubOrigin`, then run `node --use-system-ca scripts/test-cloud-github-storage.mjs` before Hosting. This actual-service check verifies Master/Follower/Settings uploads, exact downloads, immutable writes and deletion permissions, then removes its disposable files, room and identities. It never changes the global default. Run cloud checks sequentially in a controlled session; frontend-only changes do not require cloud mutations.
 
 The zoom/pan release requires the updated database rules **before** Hosting: the previous rules reject the new `horizontal` field and zoom values above 200%. These rules are deployed; the field is optional so existing room snapshots and older clients remain readable. For future schema changes, deploy rules first, run the cloud smoke test, and then publish Hosting. The smoke test now exercises horizontal pan and 300% zoom. Refresh each participant's browser after deploying a viewer update.
 
@@ -450,7 +441,7 @@ Cloudflare Pages can host the same frontend while Firebase continues to provide 
 | Build command | `npm run build:deploy` |
 | Output directory | `dist` |
 | Node version | 24 |
-| Environment variables | The same Firebase, Supabase, Settings account email and optional PDF settings listed above |
+| Environment variables | The same Firebase, required GitHub Worker origin, Settings account email and optional PDF settings listed above |
 
 Serve the versioned PDFs and generated PDF.js worker from the same deployment; add the chosen host to Firebase authorized domains if needed. The Vite development API is not included in Pages. No Cloudflare resources were created for the initial deployment.
 
@@ -458,13 +449,13 @@ Serve the versioned PDFs and generated PDF.js worker from the same deployment; a
 
 ### Settings and file uploads
 
-Implementation modules are `src/settings.ts` (screen/forms), `src/admin.ts` (local/Firebase/Storage operations), `src/github-storage.ts` (Worker client), `src/songbook.ts` (descriptor/upload validation), `server/admin-auth.ts` (local password sessions), and `storage-worker/src/` (GitHub bridge). The SQL in `supabase/` supports legacy installations. Account provisioning is in `scripts/setup-settings-admin.mjs`.
+Implementation modules are `src/settings.ts` (screen/forms), `src/admin.ts` (local/Firebase/Storage operations), `src/github-storage.ts` (Worker client), `src/songbook.ts` (descriptor/upload validation), `server/admin-auth.ts` (local password sessions), and `storage-worker/src/` (GitHub bridge). Account provisioning is in `scripts/setup-settings-admin.mjs`.
 
 The home screen has a **Settings** button. Unlock it with the configured administrator password to list/delete rooms, view/add/delete PDFs and image songs, replace the original PDF and choose the default. Masters and Followers can upload in rooms; only Masters select the shared file, and only Settings administrators manage the default or deletion. Changing the default affects new rooms. Choose another default before deleting the current one. Active rooms retain copies of deleted files until they switch away or expire. The original songbook is a permanent fallback; update it with **Replace original PDF** rather than deleting its row.
 
 Local Settings uses `MUSIC_ADMIN_PASSWORD` in `.env.local` (server-only, never `VITE_`). Uploaded files and the default descriptor persist under ignored `.local-data/`; local rooms remain in memory and disappear on restart. Run `node scripts/test-settings.mjs` against `npm run dev` to check authorization, upload/download, room pinning and targeted deletion. The test restores the default and removes only its own rooms.
 
-Cloud Settings uses a separate, in-memory Firebase email/password session, independent of the musician's anonymous identity. The default account email is `settings@music-room.app`; override it with `VITE_ADMIN_EMAIL`. Only UIDs allowlisted at `/admins/<uid> = true` can list/delete rooms and write `/songbook` and `/defaultFile`, or delete catalog entries. Clients cannot read or write the allowlist. Provision that entry with a trusted Firebase CLI account, never with an embedded administrator key. `node --use-system-ca scripts/test-cloud-settings.mjs` verifies cloud administrator permissions, denied musician operations and actual Supabase PDF upload/download; it removes only its own test room and leaves a versioned verification PDF in the bucket.
+Cloud Settings uses a separate, in-memory Firebase email/password session, independent of the musician's anonymous identity. The default account email is `settings@music-room.app`; override it with `VITE_ADMIN_EMAIL`. Only UIDs allowlisted at `/admins/<uid> = true` can list/delete rooms and write `/songbook` and `/defaultFile`, or delete catalog entries. Clients cannot read or write the allowlist. Provision that entry with a trusted Firebase CLI account, never with an embedded administrator key. Provision the account with `node --use-system-ca scripts/setup-settings-admin.mjs` and allowlist its printed UID using trusted administration tools. Use `scripts/test-cloud-github-storage.mjs` for current storage upload/deletion checks and `scripts/test-cloud-control.mjs` for room-control authorization.
 
 Settings accepts the configured password/PIN. For Firebase, `src/settings-password.mjs` converts it to a namespaced credential so short PINs meet Firebase's minimum credential length. The public prefix does not strengthen a short PIN. Provisioning and cloud tests use the same conversion; the PIN itself is not embedded in the frontend. Local sign-in continues to verify the entered PIN on the server.
 
@@ -479,7 +470,7 @@ The new backend uses the private repository `talgreen1/music-room-files` and Clo
 3. Create a **fine-grained GitHub token**, restricted to this repository, with **Contents: Read and write**. Run `npx wrangler secret put GITHUB_TOKEN --config storage-worker/wrangler.jsonc` and paste the token at its terminal prompt. Never put it in a `VITE_*` value, commit it or send it to musicians. Renew it before its chosen expiry. The Worker needs no Firebase service-account secret: it verifies Firebase signatures and checks current Database permissions with the caller's token.
 4. Deploy `database.rules.json`, then run `node --use-system-ca scripts/configure-github-storage.mjs` with the ignored deployment environment and server-only Settings password available. This sets `/storageConfig/githubOrigin` to the configured Worker HTTPS origin. Only Settings may change this value. Catalog rules accept GitHub URLs only under this origin and the uploader UID/file ID; legacy Supabase URLs remain accepted.
 5. Run `node --use-system-ca scripts/test-cloud-github-storage.mjs`. It tests actual Master/Follower/Settings uploads, PDF/JPEG byte downloads, immutable uploads and rejected privileged operations, then removes its fixtures. It never changes the global default. Local Worker tests use Miniflare and isolated fake upstreams; they do not prove production permissions.
-6. Set `VITE_GITHUB_STORAGE_URL` in ignored `.env.deployment.local`, build and publish Hosting after the live checks. Leave it blank to keep the old upload provider. Keep the legacy Supabase public settings until deferred legacy cleanup is finished.
+6. Set `VITE_GITHUB_STORAGE_URL` in ignored `.env.deployment.local`, build and publish Hosting after the live checks. This setting is required; there is no alternative upload provider. Old Supabase environment variables are unused and can be removed from ignored environment files.
 
 Uploads retain the 30 MB PDF and 3 MB-per-JPEG limits. The Worker validates Firebase ID tokens, requires a readable active room for musician uploads, restricts uploads to the caller's UID, and streams bounded bytes to GitHub. Settings may upload without a room. Knowing a room code with an anonymous identity is the existing upload authorization boundary; this does not add invitation membership. Only Settings may delete bytes, after the catalog entry is hidden and no default/original/active room retains them. Incomplete imports can leave unused assets; administrators can clean them after confirming they are unreferenced. Downloads support CORS and forward Range requests; browsers can fall back to full downloads. Public download responses may remain cached for one hour after deletion.
 
@@ -493,18 +484,11 @@ Existing rooms retain their descriptors and may still need Supabase until they e
 
 If the previous original PDF host is unavailable, supply `--original-file "C:\path\songbook.pdf"` to both backup/apply runs. This explicitly restores the original from that local copy. It verifies GitHub against the supplied bytes; it cannot prove that an unavailable older hosted file was identical. Other legacy library files still need readable sources.
 
-### Legacy Supabase storage
+### Historical file URLs
 
-When no GitHub Worker origin is configured, cloud PDFs use the Supabase project `music-room`, bucket `room-pdfs`. The older `songbooks` bucket remains for previously uploaded original PDFs. Configure `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` using only the public key. Existing URLs remain readable after switching upload providers, as long as Supabase is active. The following setup applies only to legacy installations:
+Supabase uploads, deletion APIs, setup policies and provider-specific cloud scripts have been retired. Existing rooms and library descriptors are not rewritten: old public URLs can still render if their original host is available. The database keeps legacy URL validation for compatibility with saved records; this does not enable a client upload fallback. Cleanup of a non-GitHub tombstone stops with an explicit message and retains its bytes and metadata; migrate it before retrying cleanup. No old storage is deleted by this change.
 
-For a legacy installation:
-
-1. Enable Firebase email/password authentication (`firebase deploy --only auth`). Set the server-only Settings password in the local environment, then run `node --use-system-ca scripts/setup-settings-admin.mjs`. This signs into or creates the account without printing credentials. Allowlist its printed UID using the trusted CLI.
-2. Create a Free Supabase project. In **Authentication > Sign In / Providers > Third-Party Auth**, add the Firebase project ID.
-3. In the Supabase SQL editor, run [supabase/files.sql](supabase/files.sql) and [supabase/sheets.sql](supabase/sheets.sql), adjusting project IDs and the administrator UID for your installation. They create public PDF/JPEG buckets with immutable uploads scoped to each Firebase identity. Only the Settings UID can remove stored files. The original [supabase/storage.sql](supabase/storage.sql) describes the legacy Settings-only PDF bucket; keep it for existing URLs.
-4. Set the two public Supabase environment values, deploy database rules, run the cloud checks, then build/deploy Hosting. Settings passwords are entered at runtime and never bundled.
-
-Supabase's Free plan has storage/download limits and projects can pause after inactivity. Existing bundled PDFs continue working independently of Supabase; rooms pinned to an uploaded PDF need the project to be active. Retain previous uploaded PDFs until their rooms expire, then remove obsolete versions through the Supabase dashboard when storage needs clearing. See [Supabase pricing](https://supabase.com/pricing), [Firebase integration](https://supabase.com/docs/guides/auth/third-party/firebase-auth) and [Storage access control](https://supabase.com/docs/guides/storage/security/access-control).
+### Room behavior
 
 - Create/join by six-digit code; share link and QR.
 - Master scrolls and navigates; Followers initially follow automatically.
@@ -530,7 +514,7 @@ Locally, `.local-data/songs.json` now stores `{version:2,defaultId,files}`; old 
 
 With the dev server running, run `node scripts/test-file-library.mjs` for uploads, role permissions, PDF/image defaults, active-room retention and cleanup. It restores the original default and removes its own records/rooms. Phone upload/pinch testing remains a manual check.
 
-For a new installation, follow the GitHub storage setup above. Legacy Supabase installations use **supabase/files.sql** and **supabase/sheets.sql** and the older `test-cloud-files.mjs`/`test-cloud-sheets.mjs` checks. Keep legacy buckets and URLs until rooms using them expire. Those legacy checks require Supabase; the PDF check temporarily changes/restores the global default.
+For every cloud installation, follow the GitHub storage setup above and run `scripts/test-cloud-github-storage.mjs` after relevant Worker/storage changes.
 
 ## Share chord screenshots
 
@@ -546,7 +530,7 @@ Followers can open **☰ > Add file/song** to upload a PDF or stitched screensho
 
 To update the original songbook, unlock Settings and choose **Replace original PDF** beside its row. Choose one PDF (up to 30 MB), optionally enter a name, and confirm replacement. The upload uses a new immutable URL and version; existing rooms retain their previous descriptor. Replacing the original does not change which library entry is selected as the default. Choose **Make default** on its row if another file is currently the default. The original remains a permanent fallback entry and is managed only in Settings.
 
-Cloud catalog creation accepts an anonymous authenticated participant's own upload associated with an active room code. Local development instead issues upload-only join tokens. Storage paths and catalog metadata remain owned by the uploader; shared source/position writes remain Master-only. Run `node scripts/test-follower-uploads.mjs` against the local development server to verify PDF/image uploads, permissions, shared selection and room cleanup with disposable fixtures. Cloud checks in `test-cloud-files.mjs` and `test-cloud-sheets.mjs` verify actual Follower imports and retained authorization boundaries; run them after relevant rule or Storage changes.
+Cloud catalog creation accepts an anonymous authenticated participant's own upload associated with an active room code. Local development instead issues upload-only join tokens. Storage paths and catalog metadata remain owned by the uploader; shared source/position writes remain Master-only. Run `node scripts/test-follower-uploads.mjs` against the local development server to verify PDF/image uploads, permissions, shared selection and room cleanup with disposable fixtures. Use `scripts/test-cloud-github-storage.mjs` for actual cloud imports/storage permissions and `scripts/test-cloud-control.mjs` for room-control permissions after relevant changes.
 
 ### Local testing
 
@@ -556,10 +540,10 @@ Run `npm run dev`, create a room and upload screenshots. Open its link from anot
 
 Screenshot sharing and the song library are deployed at the live app. For another installation, or changes to these policies:
 
-1. Configure the GitHub Worker as above. For a legacy Supabase installation only, run [supabase/sheets.sql](supabase/sheets.sql) to create `room-sheets` and its UID-scoped policies.
-2. Validate and deploy the updated `database.rules.json` before publishing the frontend. The rules permit the Master and approved room controllers to change the source/position and require matching source IDs. Run `node --use-system-ca scripts/test-cloud-sheets.mjs` to verify real uploads/downloads, Master/Follower and room-free Settings imports, denied Follower source/default/deletion writes, reconnect, tombstones and administrator cleanup. It uses `MUSIC_ADMIN_PASSWORD` from the local environment and removes only its own disposable rooms, catalog entries and JPEGs. Do not put that password in a `VITE_*` variable.
+1. Configure the GitHub Worker and required `VITE_GITHUB_STORAGE_URL` as above.
+2. Deploy any changed database rules before publishing a dependent frontend. Run `node --use-system-ca scripts/test-cloud-github-storage.mjs` for actual PDF/JPEG imports, immutable storage and cleanup authorization, and `scripts/test-cloud-control.mjs` for room-control permissions. These scripts use the server-only Settings password from ignored configuration; never prefix it with `VITE_`.
 3. Run `npm run build:deploy`, then publish Hosting using the existing deployment process. Refresh all devices after release; older frontend clients do not support image sheets.
 
-Uploaded sheets use the configured GitHub Worker or legacy Supabase provider and its free usage allowances. Saved songs remain available until deleted in **Settings > Files & songs**, which lists every song and offers **View** and **Delete**. Deletion hides the library entry immediately. Active rooms retain their current copy. On Settings refresh or room deletion, unused deleted songs have their tiles and metadata removed. Cloud tombstones live under `/songs/<id>/deletedAt`; only Settings may delete/clean up, and room rules prevent selecting tombstoned songs. GitHub cleanup checks current original/default/active-room references in the Worker. Legacy Supabase cleanup requires the SELECT/DELETE policies in `supabase/sheets.sql`. Failed imports can leave unreferenced assets. Saved local files use the same deletion lifecycle; never clear `.local-data/` to reset tests or fix a server.
+Uploaded sheets use the GitHub Worker and its configured GitHub release storage. Saved songs remain available until deleted in **Settings > Files & songs**, which lists every song and offers **View** and **Delete**. Deletion hides the library entry immediately. Active rooms retain their current copy. On Settings refresh or room deletion, unused deleted songs have their tiles and metadata removed. Cloud tombstones live under `/songs/<id>/deletedAt`; only Settings may delete/clean up, and room rules prevent selecting tombstoned songs. GitHub cleanup checks current original/default/active-room references in the Worker. Non-GitHub tombstones retain their original bytes/metadata and report unsupported cleanup. Failed imports can leave unreferenced assets. Saved local files use the same deletion lifecycle; never clear `.local-data/` to reset tests or fix a server.
 
-Latest release verification (2026-10-08): all 68 unit tests and the deployment build passed. Live Firebase/Supabase checks verified Follower PDF/image uploads, Master selection, permission restrictions, defaults, room/file retention and disposable-file cleanup. Browser checks verified player controls. Comprehensive physical-device memory/background/recovery and original-PDF replacement acceptance remain tracked in the plan.
+Historical release verification (2026-10-08, before the GitHub migration): all 68 unit tests and the deployment build passed. Live Firebase/Supabase checks verified Follower PDF/image uploads, Master selection, permission restrictions, defaults, room/file retention and disposable-file cleanup. Browser checks verified player controls. Comprehensive physical-device memory/background/recovery and original-PDF replacement acceptance remain tracked in the plan.
