@@ -5,8 +5,8 @@ const id = 'b'.repeat(32), origin = 'https://files.example';
 const user = { uid: 'uploader', getIdToken: async () => 'firebase-token' } as unknown as User;
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 describe('GitHub file storage client', () => {
-  it('keeps storage disabled until configured and rejects origins with paths', () => {
-    vi.stubEnv('VITE_GITHUB_STORAGE_URL', ''); expect(storageOrigin()).toBeUndefined();
+  it('requires GitHub configuration and rejects origins with paths', () => {
+    vi.stubEnv('VITE_GITHUB_STORAGE_URL', ''); expect(() => storageOrigin()).toThrow('VITE_GITHUB_STORAGE_URL');
     vi.stubEnv('VITE_GITHUB_STORAGE_URL', origin + '/unexpected'); expect(() => storageOrigin()).toThrow();
   });
   it('sends only Firebase authorization and an active-room hint for room uploads', async () => {

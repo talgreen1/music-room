@@ -42,7 +42,7 @@ Paths in the Unit column are under `src/`; Integration paths are under `scripts/
 | Optional Master/controller vertical scrollbar, default-hidden menu preference and hidden Follower controls | `scrollbar.test.ts`, `vertical-scrollbar.test.ts` cover pointer/keyboard handling, visibility, cleanup, loading/role transitions and fresh-room reset | Vertical scrollbar acceptance below |
 | PDF size/header and original descriptor validation | `songbook.test.ts` | `test-settings.mjs`, `test-file-library.mjs`; PDF-only replacement dialog checklist |
 | Shared room control, pending/approval/password grants, release and permissions | `shared-control.test.ts`, `control-dialog.test.ts`, `rooms-control.test.ts`, `viewer-control.test.ts`, `follower-sync.test.ts`, scrollbar held-move regression | `test-shared-control.mjs`; rules-first `test-cloud-control.mjs`; shared-control checklist below |
-| Settings password, expiry, rate limiting and administrator authorization | `admin-auth.test.ts` | `test-settings.mjs`, `test-cloud-settings.mjs`; focus/lock/in-room checklist |
+| Settings password, expiry, rate limiting and administrator authorization | `admin-auth.test.ts` | `test-settings.mjs`, `test-cloud-control.mjs`, `test-cloud-github-storage.mjs`; focus/lock/in-room checklist |
 | Persistent PDFs/images, default choice and original PDF replacement | `song-library.test.ts`, `songbook.test.ts`, `local-rooms.test.ts` | Settings/library checks verify new defaults and unchanged existing rooms; replacement browser checklist |
 | Screenshot overlap, stationary bars, uncertain joins and manifest limits | `stitch.test.ts` | Actual JPEG upload/download checks; stitch/crop visual checklist |
 | Follower imports, upload-only sessions and Master selection | `local-rooms.test.ts`, `song-library.test.ts` | `test-follower-uploads.mjs`; cloud files/sheets checks; menu/notice checklist |
@@ -53,29 +53,22 @@ Paths in the Unit column are under `src/`; Integration paths are under `scripts/
 | Thumbnail-default library, list toggle, selection permissions and preview cleanup | `song-dialog.test.ts`, `library-thumbnails.test.ts` | Real PDF/image appearance and phone scrolling acceptance below; isolated DOM/render mocks do not prove actual canvas layout |
 | Home explainer link and Hebrew portrait animation | `explainer.test.ts` tests the shipped player with controlled clock/audio | Home/back navigation and visual/music checklist |
 | Autoplay, reduced motion, pause/seek/stop, mute/volume and late audio races | `explainer.test.ts` | Actual browser audio, mobile autoplay and visibility checklist |
-| Production configuration and hosting | Type check and regular build in CI | Deployment build rejects missing Firebase/emulator configuration; release HTTP and cloud checks |
-| GitHub uploads, URL validation, Settings deletion and legacy fallback | `github-storage.test.ts` | `storage-worker/storage.test.ts` runs the real Worker runtime with isolated Firebase/GitHub upstreams; actual-service and phone checks below |
+| Production configuration and hosting | Type check, `deployment-config.test.ts` and regular build in CI | Deployment build rejects missing Firebase settings, emulator mode and missing/invalid GitHub Worker origins; release HTTP and cloud checks |
+| GitHub-only uploads/deletion, required configuration and legacy URL retention | `github-storage.test.ts`, `file-upload.test.ts`, `cloud-storage.test.ts` | `storage-worker/storage.test.ts` runs the real Worker runtime with isolated Firebase/GitHub upstreams; actual-service and phone checks below |
 
 ## Cloud checks
 
 Cloud checks are deliberately outside CI. They need ignored deployment environment
 configuration, Firebase anonymous/Settings authentication and deployed database rules.
-GitHub storage uses `test-cloud-github-storage.mjs`; the older commands below require
-configured Supabase policies. Run relevant checks sequentially in a controlled session:
+Run relevant checks sequentially in a controlled session:
 
 ```powershell
 node --use-system-ca scripts/test-cloud-rooms.mjs
-node --use-system-ca scripts/test-cloud-settings.mjs
-node --use-system-ca scripts/test-cloud-files.mjs
-node --use-system-ca scripts/test-cloud-sheets.mjs
+node --use-system-ca scripts/test-cloud-control.mjs
+node --use-system-ca scripts/test-cloud-github-storage.mjs
 ```
 
-These perform real operations. Files/sheets checks remove their disposable records
-and bytes; the PDF check temporarily changes and restores the global default.
-The older room smoke check leaves an expiring test room, and the older Settings
-check leaves a versioned verification PDF. See their cleanup code before use.
-Expected permission-denied warnings are assertions that forbidden writes failed.
-Local tests cannot prove Firebase/Supabase authorization or real-network latency.
+These perform real operations. The GitHub storage check removes its own files, room and anonymous identities without changing the global default. The older room smoke check leaves an expiring test room. Review each script cleanup before use. Expected permission-denied responses assert forbidden writes. Local tests do not establish production Firebase/Worker permissions or real-network latency. Retired Supabase scripts and setup policies are no longer supported.
 
 ## Browser and physical-phone acceptance
 
@@ -103,9 +96,9 @@ Miniflare/workerd. Only upstream Firebase/GitHub HTTP responses are isolated. It
 checks signed versus forged/expired/wrong-project identities, own namespaces,
 active-room and Settings upload permissions, stream length/header validation,
 immutable conflicts, exact public bytes, secret-free CDN requests and deletion
-retention. `src/github-storage.test.ts` verifies provider opt-in, request scope,
+retention. `src/github-storage.test.ts` verifies required origin configuration, request scope,
 returned URL validation and rejecting mixed/unrelated deletion paths. These tests
-do not establish live GitHub/Cloudflare availability or production Database rules.
+do not establish live GitHub/Cloudflare availability or production Database rules. `file-upload.test.ts` and `cloud-storage.test.ts` verify GitHub-only PDF/Settings/room screenshot routing, no requests on missing configuration, local upload preservation, successful/failed deletion, active-room retention and refusal to clean up non-GitHub records.
 
 After deploying the Worker and Database rules, configure its allowed origin with
 `scripts/configure-github-storage.mjs`, then run:
@@ -128,7 +121,7 @@ and the saved `metadata.json`/`uploaded.json`/`changes.json` before retiring Sup
 - [ ] Android/iPhone: Master, Follower and Settings upload PDF/images; a large PDF succeeds within Free Worker limits; stitching and private previews still work.
 - [ ] Follower import leaves the shared view unchanged; Master/controller selection appears on both phones and files remain available in new rooms.
 - [ ] Settings replaces original, changes default, deletes unused files and defers deletion of files still in active rooms; search reads migrated PDFs.
-- [ ] After all old rooms expire, new rooms and file previews work without requesting Supabase URLs.
+- [ ] GitHub-only release (not yet run): test Master/Follower/Settings PDF and screenshot imports, original replacement, default and active-room retention, deletion, search/previews and cross-device sync on desktop/Android/iPhone. Inspect network requests: new imports/deletions use only the Worker. A cloud upload without a Worker origin must fail without trying another provider; a deployment build must reject a blank/invalid origin. Existing historical URLs may still request their original host for viewing.
 
 Actual-service upload/permission/full-PDF checks and the supplied-original migration
 passed on 2026-10-16. The deployed original returned HTTP 206 with exactly 1,024

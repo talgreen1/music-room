@@ -17,4 +17,4 @@ if (!result.ok) throw new Error(result.value.error?.message || 'Settings account
 await mkdir('.local-data', { recursive: true });
 await writeFile('.local-data/admin-uid.txt', result.value.localId);
 console.log(`Settings administrator UID: ${result.value.localId}`);
-console.log('Allowlist this UID in /admins, and use it in the Supabase upload policy.');
+console.log('Allowlist this UID in /admins so Settings can manage rooms, the library and GitHub file storage.');
