@@ -130,6 +130,8 @@ Creating a room reserves a six-digit code with a Firebase transaction. The room 
 
 `RoomService` in `src/rooms.ts` handles the backend operations. The Master UI requires both the creator's authenticated UID and a creator flag in the tab's session storage. Database rules independently restrict shared position/source writes to the creator and approved controllers. Followers can read active rooms but cannot change ownership, the PDF descriptor, or the room lifetime. Root reads are denied. Room-list reads and room deletion require a separately allowlisted Settings administrator.
 
+If room data temporarily becomes unavailable, shared control pauses. When a valid, unexpired snapshot returns, the app rechecks the creator identity and the original tab's saved creator flag, restores Master controls, reloads the viewer at the latest shared position and closes the unavailable screen. Expired/deleted rooms remain unavailable. This recovery does not transfer ownership, recover a lost browser identity or grant Master status to a new tab without its creator flag.
+
 Closing the Master tab leaves the last shared position in the room; there is no automatic takeover. Losing the creator's identity/session requires creating another room. Expired Firebase records become inaccessible to participants but remain stored until a maintainer removes them.
 
 ### Position synchronization

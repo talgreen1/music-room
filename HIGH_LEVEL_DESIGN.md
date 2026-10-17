@@ -99,6 +99,8 @@ Rooms initially last 24 hours. This is a product default, not a requirement from
 
 The creator remains the Master; refreshing on that device should restore the role through the authenticated identity and saved session. A shared link never carries a Master credential. Closing the Master tab leaves the room at its last position. There is no automatic takeover. Loss of the creator's browser identity requires creating a new room.
 
+Every accepted room snapshot recomputes local ownership from the active room lifetime, matching musician UID and tab-scoped creator marker. A null snapshot suspends control without erasing that marker. The unavailable UI stops the publisher, invalidates pending source loads and resets follow state without destroying it. A later valid snapshot reloads the viewer and restores controls even when its position sequence is unchanged. Actual navigation still destroys follow state/subscriptions. Backend ownership rules are unchanged.
+
 ## 6. Synchronization
 
 ### Coordinate system
