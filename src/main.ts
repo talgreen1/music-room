@@ -9,6 +9,7 @@ import { SongbookViewer } from './viewer';
 import { PositionPublisher } from './sync';
 import { createViewerToolbar } from './viewer-toolbar';
 import { PdfScrollbar } from './scrollbar';
+import { createVerticalScrollbarToggle } from './vertical-scrollbar';
 import { FollowerSync, canInteractWithDocument } from './follower-sync';
 import { showSettings, showSettingsDialog } from './settings';
 import { showSongLibrary, showSongPreview } from './song-dialog';
@@ -21,6 +22,7 @@ const app = document.querySelector<HTMLDivElement>('#app')!;
 const service = new RoomService();
 let viewer: SongbookViewer | undefined;
 let scrollbar: PdfScrollbar | undefined;
+let scrollbarToggle: ReturnType<typeof createVerticalScrollbarToggle> | undefined;
 let publisher: PositionPublisher | undefined;
 let followerSync: FollowerSync | undefined;
 let closeSheet: (() => void) | undefined;
@@ -49,7 +51,7 @@ const message = (value: string, duration = 0) => {
   }
 };
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong. Please try again.';
-function cleanup() { generation++; closeControl?.(); closeControl = undefined; refreshRequests = undefined; window.clearTimeout(noticeTimer); noticeTimer = undefined; closeMenu?.(); closeMenu = undefined; closeSheet?.(); closeSheet = undefined; closeSettings?.(); closeSettings = undefined; followerSync?.destroy(); followerSync = undefined; publisher?.stop(); publisher = undefined; scrollbar?.destroy(); scrollbar = undefined; viewer?.destroy(); viewer = undefined; service.leave(); room = undefined; ready = false; lastSequence = -1; lastPublished = ''; }
+function cleanup() { generation++; closeControl?.(); closeControl = undefined; refreshRequests = undefined; window.clearTimeout(noticeTimer); noticeTimer = undefined; closeMenu?.(); closeMenu = undefined; closeSheet?.(); closeSheet = undefined; closeSettings?.(); closeSettings = undefined; followerSync?.destroy(); followerSync = undefined; publisher?.stop(); publisher = undefined; scrollbarToggle?.destroy(); scrollbarToggle = undefined; scrollbar?.destroy(); scrollbar = undefined; viewer?.destroy(); viewer = undefined; service.leave(); room = undefined; ready = false; lastSequence = -1; lastPublished = ''; }
 
 function home() {
   cleanup();
@@ -121,6 +123,7 @@ async function openRoom(code: string) {
   const pdfFrame = document.createElement('div'); pdfFrame.className = 'pdf-frame';
   $('#pdf').before(pdfFrame); pdfFrame.append($('#pdf'));
   scrollbar = new PdfScrollbar($('#pdf')); pdfFrame.append(scrollbar.element);
+  scrollbarToggle = createVerticalScrollbarToggle(scrollbar);
   viewer = new SongbookViewer($('#pdf'));
   viewer.onLinkError = message;
   const syncControl = document.createElement('label'); syncControl.className = 'sync-control'; syncControl.hidden = true;
@@ -172,7 +175,7 @@ async function openRoom(code: string) {
     });
   };
   searchButton.onclick = openSearch;
-  menuActions.append(screenshots, songsButton, menuSettings, orientation);
+  menuActions.append(screenshots, songsButton, menuSettings, orientation, scrollbarToggle.toggle);
   const pdfButton = document.createElement('button'); pdfButton.className = 'secondary source-button'; pdfButton.textContent = 'PDF';
   $('.toolbar').append(pdfButton);
   const controlLabel = document.createElement('label'); controlLabel.className = 'sync-control';
@@ -218,8 +221,7 @@ async function openRoom(code: string) {
   const independent = () => canInteractWithDocument(ready, controlsRoom, following);
   const jump = (page: number) => { if (independent() && ready && Number.isFinite(page)) { viewer?.jump(page); const p = viewer?.position(); if (controlsRoom && p) publishPosition(p, true); } };
   function updateFollow() {
-    if (scrollbar) scrollbar.element.hidden = !controlsRoom;
-    scrollbar?.setEnabled(ready && controlsRoom);
+    scrollbarToggle?.update(controlsRoom, ready);
     orientation.hidden = !controlsRoom;
     settingsButton.textContent = '☰';
     settingsButton.setAttribute('aria-label', 'Room menu'); settingsButton.title = 'Room menu';
@@ -248,7 +250,7 @@ async function openRoom(code: string) {
   function unavailable(title: string, explanation: string) {
     if (token !== generation) return;
     ready = false; controlsRoom = false; viewer?.cancelFollow();
-    scrollbar?.setEnabled(false);
+    scrollbarToggle?.update(false, false);
     orientation.hidden = true;
     dismissMenu();
     $('#role').textContent = 'Room unavailable';

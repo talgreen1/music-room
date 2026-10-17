@@ -405,6 +405,15 @@ Migration evidence (2026-10-16): the previous Supabase storage hostname was unav
 
 ## Verification approach
 
+### Optional vertical scrollbar
+
+- [x] Add **Show vertical scrollbar** after RTL in the Master/controller hamburger menu; default hidden and local to the current room view.
+- [x] Reuse the existing vertical track, retain its interaction/role permissions and hide both native scrollbar axes; no horizontal scrollbar.
+- [x] Test default visibility, toggling without scrolling, keyboard access, loading/control transitions, cleanup and room reset; update documentation.
+- [ ] Run desktop/Android/iPhone layout and two-device acceptance in TESTING.md.
+
+Release validation (2026-10-17): type checking, all 136 tests, all seven isolated HTTP/PDF integration checks, ordinary build and deployment build passed. Hosting was published and its live JavaScript verified byte-for-byte against the deployment output, including the vertical toggle and absence of the horizontal toggle. Physical-device acceptance remains pending; no database rules changed.
+
 ### File library thumbnails
 
 - [x] Open the room library in a thumbnail grid by default, including original PDF, uploaded PDFs and image songs.
