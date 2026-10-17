@@ -405,6 +405,15 @@ Migration evidence (2026-10-16): the previous Supabase storage hostname was unav
 
 ## Verification approach
 
+### Master ownership recovery
+
+- [x] Recheck active room lifetime, musician identity and saved creator marker on each room snapshot; recover after missing data without granting a new participant ownership.
+- [x] Restore the viewer/control UI after valid data returns; stop stale publishing and pending loads while unavailable and retain usable follow state.
+- [x] Add regression coverage for repeated missing/valid snapshots, unchanged position sequence, identity/marker mismatch, expiry/server offset, controller separation and obsolete source loads; update docs.
+- [ ] Verify original-tab refresh, phone backgrounding/reconnect and two-device publishing with the new build; the original production incident has not been reproduced on a physical device.
+
+Release validation (2026-10-17): type checking, all 141 tests, seven isolated HTTP/PDF integration checks and the deployment build passed. Hosting was published and the live JavaScript/CSS verified byte-for-byte against deployment output. The null/valid snapshot regression reproduces and verifies the recovery bug locally; actual phone/network acceptance and the cause of the original incident remain unverified. No database rules changed.
+
 ### Optional vertical scrollbar
 
 - [x] Add **Show vertical scrollbar** after RTL in the Master/controller hamburger menu; default hidden and local to the current room view.

@@ -250,11 +250,13 @@ async function openRoom(code: string) {
   function unavailable(title: string, explanation: string) {
     if (token !== generation) return;
     ready = false; controlsRoom = false; viewer?.cancelFollow();
+    sourceRevision++; loadingSource = ''; loadedSource = '';
+    publisher?.stop(); publisher = undefined;
     scrollbarToggle?.update(false, false);
     orientation.hidden = true;
     dismissMenu();
     $('#role').textContent = 'Room unavailable';
-    sync.destroy();
+    sync.reset(true);
     pdfFrame.hidden = true;
     $('.toolbar').hidden = true;
     $<HTMLButtonElement>('#share').disabled = true;

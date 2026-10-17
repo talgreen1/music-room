@@ -101,15 +101,15 @@ export class RoomService {
   }
   watch(code: string, onRoom: (room: Room | null) => void, onConnection: (status: Connection) => void, onError: (message: string) => void) {
     this.leave(); this.code = code; this.onRoom = onRoom;
-    this.master = sessionStorage.getItem(`music-master:${code}`) === '1';
     this.uploadToken = sessionStorage.getItem(`music-master-token:${code}`) || '';
     let expiresAt = Infinity;
     const accept = (room: Room | null) => {
       this.sourceId = room?.sheet?.id || 'pdf';
       expiresAt = room?.expiresAt || Infinity;
       this.sequence = Math.max(this.sequence, room?.position.sequence || 0);
-      if (room?.masterId !== this.uid) this.master = false;
       this.activeRoom = Boolean(room && room.expiresAt > Date.now() + this.serverOffset);
+      // A missing snapshot suspends ownership; later valid data must recheck it.
+      this.master = this.activeRoom && room?.masterId === this.uid && sessionStorage.getItem(`music-master:${code}`) === '1';
       this.controlling = Boolean(this.activeRoom && room?.controllers?.[this.memberId || this.uid]);
       onRoom(this.activeRoom ? room : null);
     };
