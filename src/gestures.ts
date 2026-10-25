@@ -5,12 +5,15 @@ interface Callbacks {
   zoom: (factor: number, from: Point, to: Point) => void;
   start: () => void;
   end: () => void;
+  pinchStart?: () => void;
+  pinchEnd?: () => void;
 }
 
 /** Own gestures inside the PDF only; browser/UI zoom elsewhere remains available. */
 export class PdfGestures {
   private pointers = new Map<number, Point>();
   private active = false;
+  private pinching = false;
   private suppressLinkClick = false;
   private events = new AbortController();
   constructor(private host: HTMLElement, private callbacks: Callbacks) {
@@ -21,6 +24,7 @@ export class PdfGestures {
       if (callbacks.locked() || (event.pointerType === 'mouse' && event.button !== 0)) return;
       if (!this.pointers.size) this.suppressLinkClick = false;
       this.pointers.set(event.pointerId, this.point(event));
+      if (this.pointers.size === 2) { this.pinching = true; callbacks.pinchStart?.(); }
       const link = typeof target.closest === 'function' && target.closest('a');
       // Let a single finger/mouse click reach the link. Capture only after a
       // drag threshold or second finger establishes that this is a gesture.
@@ -58,6 +62,7 @@ export class PdfGestures {
       if (!this.pointers.size) {
         host.classList.remove('dragging');
         if (this.active) { this.active = false; callbacks.end(); }
+        if (this.pinching) { this.pinching = false; callbacks.pinchEnd?.(); }
       }
     };
     for (const name of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) host.addEventListener(name, finish, options);
@@ -97,6 +102,8 @@ export class PdfGestures {
     for (const id of ids) if (this.host.hasPointerCapture(id)) this.host.releasePointerCapture(id);
     this.host.classList.remove('dragging');
     if (this.active) { this.active = false; this.callbacks.end(); }
+    if (this.pinching) { this.pinching = false; this.callbacks.pinchEnd?.(); }
   }
+  cancel() { this.clear(); }
   destroy() { this.events.abort(); this.clear(); }
 }

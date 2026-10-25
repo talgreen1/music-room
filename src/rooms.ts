@@ -6,6 +6,7 @@ import { validateFile, type SharedFile } from './sheets';
 import { roomCode, normalizePosition, type Room, type Position } from './model';
 import { uploadLibraryPdf } from './file-upload';
 import { uploadGitHubFile } from './github-storage';
+import { recordSyncDiagnostic } from './sync-diagnostics';
 import { validateSongbook } from './songbook';
 const env = import.meta.env;
 let emulatorsConnected = false;
@@ -196,13 +197,18 @@ export class RoomService {
     if (position.sourceId && position.sourceId !== this.sourceId) return;
     const knownSequence = this.sequence;
     const value = { ...normalizePosition(position), writerId: this.writerId, sourceId: position.sourceId || this.sourceId, sequence: ++this.sequence, updatedAt: Date.now() + this.serverOffset };
-    if (this.db) await runTransaction(ref(this.db, `rooms/${this.code}/position`), current => {
+    if (this.db) try { await runTransaction(ref(this.db, `rooms/${this.code}/position`), current => {
       // Firebase may first call a transaction with null when its local cache is empty.
       // Seed from the subscribed sequence; the server retries against its actual state.
       current ||= { sourceId: value.sourceId, sequence: knownSequence };
       if ((current.sourceId || 'pdf') !== value.sourceId) return;
       return { ...value, sequence: (current.sequence || 0) + 1, updatedAt: serverTimestamp() };
-    }, { applyLocally: false });
+    }, { applyLocally: false }); } catch (error) {
+      const contention = /maxretry/i.test(String(error));
+      recordSyncDiagnostic({ event: 'position-write-failed', page: value.page, zoom: value.zoom, sequence: value.sequence, reason: contention ? 'maxretry' : 'write-failed' });
+      if (contention) throw new Error('Shared position could not be saved because updates kept competing. Try the gesture again.');
+      throw error;
+    }
     else if (localServerConfigured) {
       const token = this.uploadToken;
       if (!token) throw new Error('Master session is missing. Create a new room.');

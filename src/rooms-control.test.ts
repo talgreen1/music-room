@@ -46,4 +46,11 @@ describe('cloud shared-control transactions', () => {
     await service.publish({ page: 4, offset: .5, zoom: 2 });
     expect(transaction).not.toHaveBeenCalled();
   });
+  it('explains transaction contention without exposing Firebase error URLs', async () => {
+    vi.stubGlobal('navigator', { onLine: true });
+    const service = new RoomService(); Object.assign(service, { db: {}, master: true, activeRoom: true, connected: true, code: '123456' });
+    transaction.mockRejectedValue(new Error('maxretry at https://private.example/path'));
+    await expect(service.publish({ page: 1, offset: .2, zoom: 2 })).rejects.toThrow('updates kept competing');
+    expect(transaction).toHaveBeenCalledOnce();
+  });
 });

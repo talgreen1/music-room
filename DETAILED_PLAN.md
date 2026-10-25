@@ -417,6 +417,16 @@ Verification (2026-10-17): type checking, all 150 tests, seven isolated integrat
 
 ## Verification approach
 
+### Controller pinch synchronization protection (2026-10-25)
+
+- [x] Retain the local pinch anchor and defer ordinary tagged remote positions during a controller pinch, including remaining-finger drag and final-write completion, while continuing live publishing.
+- [x] Queue the settled position behind in-flight writes; handle write failure/cancellation without unbounded retries and prevent stale completions from unlocking newer gestures.
+- [x] Preserve immediate source/destination, permission and reconnect resynchronization; retain locked/private Follower behavior and monotonic server sequencing.
+- [x] Add safe opt-in diagnostics and readable transaction-contention feedback, regression tests and documentation.
+- [ ] Run the iPhone Safari/Chrome two-controller latency/gesture acceptance in TESTING.md. The supplied recording is evidence of the symptom; the exact platform-specific cause and fix are not yet confirmed on a physical iPhone.
+
+Local verification: type checking, all 160 regression/unit tests, seven isolated HTTP/PDF integration checks and the build passed. No database rules or backend schema changed. Physical iPhone verification is still required before treating this as a confirmed fix for the reported symptom.
+
 ### Master ownership recovery
 
 - [x] Recheck active room lifetime, musician identity and saved creator marker on each room snapshot; recover after missing data without granting a new participant ownership.

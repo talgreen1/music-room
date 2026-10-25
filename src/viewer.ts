@@ -35,14 +35,21 @@ export class SongbookViewer {
   onLinkError?: (message: string) => void;
   onInteractionStart?: () => void;
   onInteractionEnd?: () => void;
+  onPinchStart?: () => void;
+  onPinchEnd?: () => void;
+  private pinching = false;
+  private cancellingGesture = false;
+  private pinchAnchor?: Position & { horizontal: number };
   constructor(private host: HTMLElement) {
     host.addEventListener('scroll', () => this.emitPosition(), { passive: true, signal: this.events.signal });
     this.gestures = new PdfGestures(host, {
       locked: () => host.classList.contains('locked') || (!this.pdf && !this.sheet),
       start: () => { this.onInteractionStart?.(); this.cancelFollow(); },
-      end: () => { this.emitPosition(); this.onInteractionEnd?.(); },
-      pan: (dx, dy) => { this.cancelFollow(); host.scrollLeft += dx; host.scrollTop += dy; this.emitPosition(); },
-      zoom: (factor, from, to) => this.zoomAt(this.zoom * factor, from, to)
+      end: () => { if (!this.cancellingGesture) this.emitPosition(); this.onInteractionEnd?.(); },
+      pan: (dx, dy) => { this.pinchAnchor = undefined; this.cancelFollow(); host.scrollLeft += dx; host.scrollTop += dy; this.emitPosition(); },
+      zoom: (factor, from, to) => this.zoomAt(this.zoom * factor, from, to),
+      pinchStart: () => { this.pinching = true; this.pinchAnchor = undefined; this.cancelFollow(); this.onPinchStart?.(); },
+      pinchEnd: () => { this.pinching = false; this.pinchAnchor = undefined; this.onPinchEnd?.(); }
     });
     host.addEventListener('wheel', event => {
       if (event.ctrlKey || host.classList.contains('locked')) return;
@@ -64,6 +71,7 @@ export class SongbookViewer {
   }
   get count() { return this.sheet?.segments.length || this.pdf?.numPages || 0; }
   private resetSource() {
+    this.cancelGesture();
     this.sourceRevision++; this.cancelFollow(); this.observer?.disconnect(); this.observer = undefined;
     clearTimeout(this.renderTimer); this.generation++; this.tasks.forEach(task => task.cancel()); this.tasks.clear();
     this.visible.clear(); this.links.clear(); this.pages = []; this.ratios = []; this.sheet = undefined; this.pdf = undefined;
@@ -229,9 +237,10 @@ export class SongbookViewer {
     this.cancelFollow();
     if (!this.pages.length) return;
     const { tops, heights } = this.geometry();
-    const anchor = locatePosition(tops, heights, this.host.scrollTop + from.y);
+    const anchor = this.pinchAnchor || locatePosition(tops, heights, this.host.scrollTop + from.y);
     const page = this.pages[anchor.page - 1];
-    const horizontalAnchor = (this.host.scrollLeft + from.x - page.offsetLeft) / page.offsetWidth;
+    const horizontalAnchor = this.pinchAnchor?.horizontal ?? (this.host.scrollLeft + from.x - page.offsetLeft) / page.offsetWidth;
+    if (this.pinching && !this.pinchAnchor) this.pinchAnchor = { page: anchor.page, offset: anchor.offset, horizontal: horizontalAnchor, zoom: this.zoom };
     const nextZoom = clampZoom(value);
     if (nextZoom !== this.zoom) { this.zoom = nextZoom; this.layout(); }
     const geometry = this.geometry();
@@ -277,6 +286,11 @@ export class SongbookViewer {
     this.frame = requestAnimationFrame(animate);
   }
   cancelFollow() { this.remoteFollow = false; cancelAnimationFrame(this.frame); this.target = undefined; this.sharedPosition = undefined; this.settledPosition = undefined; }
+  cancelGesture() {
+    this.cancellingGesture = true;
+    try { this.gestures.cancel(); }
+    finally { this.cancellingGesture = false; this.pinching = false; this.pinchAnchor = undefined; }
+  }
   async search(query: string): Promise<{ page: number; text: string }[]> {
     if (!this.pdf) return [];
     const matches: { page: number; text: string }[] = [];

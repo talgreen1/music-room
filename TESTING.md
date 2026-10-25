@@ -33,6 +33,7 @@ Paths in the Unit column are under `src/`; Integration paths are under `scripts/
 | --- | --- | --- |
 | Create/join, room code collisions, expiry and Master ownership | `model.test.ts`, `local-rooms.test.ts`, `rooms-ownership.test.ts` (snapshot recovery, identity/creator-marker checks, expiry and controller separation), `main-recovery.test.ts` (viewer/control recovery, unchanged sequence, obsolete source completion and live follow state) | `test-local-server.mjs`; `test-cloud-rooms.mjs`; two-browser join/recovery checklist |
 | Smooth editor scrolling / own acknowledgement suppression | `rooms-control.test.ts`, `shared-control.test.ts` | Local writer-marker round trip; updated `test-cloud-control.mjs` pending rules deployment; latency/device checklist below |
+| Controller pinch protection, fixed anchor and final-write completion | `controller-pinch.test.ts`, `main-pinch.test.ts`, `gestures.test.ts`, `viewer-control.test.ts`, `viewer-pinch-cancel.test.ts`, `sync.test.ts`; `rooms-control.test.ts`/`sync-diagnostics.test.ts` cover contention messages and opt-in bounded diagnostics | iPhone/two-controller acceptance below; simulated geometry/events do not prove native WebKit behavior |
 | Live position updates, throttling, stale-source/sequence rejection | `sync.test.ts`, `model.test.ts`, `local-rooms.test.ts` | Local SSE/reconnect check; cloud live subscriptions; network recovery checklist |
 | Default synced Follower lock and explicit private browsing | `gestures.test.ts` covers drag/pinch, rechecking mid-gesture and controller/loading behavior; `follower-sync.test.ts` covers persistent manual opt-out | Locked-Follower browser checks below |
 | Pinch, two-axis drag, trackpad zoom and dragging over PDF links | `gestures.test.ts`, `model.test.ts`, `viewer-control.test.ts` (atomic received zoom/scroll) | Local/cloud normalized position checks; Android/iPhone gesture checklist |
@@ -71,6 +72,20 @@ node --use-system-ca scripts/test-cloud-github-storage.mjs
 These perform real operations. The GitHub storage check removes its own files, room and anonymous identities without changing the global default. The older room smoke check leaves an expiring test room. Review each script cleanup before use. Expected permission-denied responses assert forbidden writes. Local tests do not establish production Firebase/Worker permissions or real-network latency. Retired Supabase scripts and setup policies are no longer supported.
 
 ## Browser and physical-phone acceptance
+
+### iPhone pinch with multiple controllers
+
+These checks have not yet been run on real devices for this change. The supplied
+recording shows document jumps and an already-visible `maxretry` message; it does
+not establish the exact iPhone-specific cause. Regression tests exercise remote
+updates during a pinch, final-write completion/failure, stale completions, source/
+role/reconnect overrides, and a stable anchor despite simulated stale scroll pixels.
+
+- [ ] Record build, iPhone model/iOS version, browser/version and network. Use an iPhone and an independent second controller; keep the second device idle first, then intentionally edit from it during a pinch. Compare Safari and Chrome on iPhone with Android/desktop.
+- [ ] Pinch in/out at first/middle/last PDF pages, over links, at zoom limits and on image sheets. Keep one finger down after the other lifts, continue dragging and then release. The iPhone must retain the local anchor without jumping to a remote page; another viewer must continue receiving live zoom/position. Once the final write completes, new other-controller edits must apply normally. Zoom buttons and ordinary pan must still work.
+- [ ] Introduce network delay and verify delayed ordinary updates do not move the local viewer during a pinch/final write. Repeat with overlapping pinches and quick successive gestures. A transaction failure must show a readable message, release protection and not create an unlimited retry loop. Do not treat simultaneous gestures as exclusive room ownership.
+- [ ] During a pinch, switch the shared file or select an atomic search destination from the other controller, revoke this device's control, and reconnect its network. Each must interrupt the old gesture and resynchronize immediately, with no stale final write from that gesture changing the new source. A synced read-only Follower remains locked; explicit private browsing stays private.
+- [ ] Add `&syncDebug=1` to the room URL and reload. Inspect `window.musicRoomSyncDiagnostics` and console output for pinch lifecycle, suppressed remote sequences and `maxretry`/write failures. Confirm at most 50 retained entries and no credentials, room codes, file URLs or document text; without the flag no diagnostic history is created. Capture this history along with a reproduction recording if jumps remain.
 
 Search result headings: `search-dialog.test.ts` verifies bold matched text before
 file/page details, Hebrew text direction, filename/title matches, safe text rendering

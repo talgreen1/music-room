@@ -22,6 +22,7 @@ vi.mock('./viewer', () => ({ SongbookViewer: class {
   load = harness.load;
   follow = harness.follow;
   cancelFollow() {}
+  cancelGesture() {}
   destroy() {}
   position() { return { page: 2, offset: .3, zoom: 1, horizontal: 0 }; }
 } }));
