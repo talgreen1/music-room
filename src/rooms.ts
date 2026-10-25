@@ -6,7 +6,8 @@ import { validateFile, type SharedFile } from './sheets';
 import { roomCode, normalizePosition, type Room, type Position } from './model';
 import { uploadLibraryPdf } from './file-upload';
 import { uploadGitHubFile } from './github-storage';
-import { recordSyncDiagnostic } from './sync-diagnostics';
+import { recordSyncDiagnostic, diagnosticUploadsEnabled } from './sync-diagnostics';
+import { startDiagnosticUpload } from './diagnostic-upload';
 import { validateSongbook } from './songbook';
 const env = import.meta.env;
 let emulatorsConnected = false;
@@ -33,6 +34,8 @@ export class RoomService {
   private memberId = '';
   private controlling = false;
   private onRoom?: (room: Room | null) => void;
+  private diagnosticCleanup?: () => void;
+  private diagnosticRoomCreatedAt = 0;
   async init() {
     if (this.initialized) return;
     if (!useEmulators && !cloudConfigured && [env.VITE_FIREBASE_API_KEY, env.VITE_FIREBASE_AUTH_DOMAIN, env.VITE_FIREBASE_DATABASE_URL, env.VITE_FIREBASE_PROJECT_ID].some(Boolean)) {
@@ -112,6 +115,20 @@ export class RoomService {
       // A missing snapshot suspends ownership; later valid data must recheck it.
       this.master = this.activeRoom && room?.masterId === this.uid && sessionStorage.getItem(`music-master:${code}`) === '1';
       this.controlling = Boolean(this.activeRoom && room?.controllers?.[this.memberId || this.uid]);
+      if (!this.activeRoom || room?.createdAt !== this.diagnosticRoomCreatedAt) { this.diagnosticCleanup?.(); this.diagnosticCleanup = undefined; }
+      if (this.activeRoom && room && diagnosticUploadsEnabled() && !this.diagnosticCleanup) {
+        this.diagnosticRoomCreatedAt = room.createdAt;
+        const session = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+        const lifetime = room.createdAt;
+        this.diagnosticCleanup = startDiagnosticUpload(lifetime, async report => {
+          if (this.code !== code || !this.activeRoom || this.diagnosticRoomCreatedAt !== lifetime) throw new Error('Diagnostic session ended.');
+          if (this.db) await set(ref(this.db, `syncDiagnostics/${code}/${this.uid}/${session}`), report);
+          else if (localServerConfigured) {
+            const response = await fetch(`/api/local-rooms/${code}/diagnostics/${session}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.uploadToken}` }, body: JSON.stringify(report) });
+            if (!response.ok) throw new Error('Diagnostic upload unavailable.');
+          } else throw new Error('Diagnostics require a shared backend.');
+        }, () => Date.now() + this.serverOffset);
+      }
       onRoom(this.activeRoom ? room : null);
     };
     const offline = () => onConnection('Offline');
@@ -119,7 +136,7 @@ export class RoomService {
     window.addEventListener('offline', offline); window.addEventListener('online', online);
     this.cleanups.push(() => { window.removeEventListener('offline', offline); window.removeEventListener('online', online); });
     const expiry = window.setInterval(() => {
-      if (expiresAt <= Date.now() + this.serverOffset) { this.master = false; this.activeRoom = false; onRoom(null); }
+      if (expiresAt <= Date.now() + this.serverOffset) { this.diagnosticCleanup?.(); this.diagnosticCleanup = undefined; this.master = false; this.activeRoom = false; onRoom(null); }
     }, 10000);
     this.cleanups.push(() => clearInterval(expiry));
     if (this.db) {
@@ -289,5 +306,5 @@ export class RoomService {
   private requireUploadRoom() {
     if (!this.code || !this.activeRoom || !navigator.onLine) throw new Error('Join an active room before uploading files.');
   }
-  leave() { this.cleanups.forEach(fn => fn()); this.cleanups = []; this.channel?.close(); this.channel = undefined; this.onRoom = undefined; this.master = false; this.activeRoom = false; this.controlling = false; this.memberId = ''; this.uploadToken = ''; this.connected = false; this.sequence = 0; this.code = ''; }
+  leave() { this.diagnosticCleanup?.(); this.diagnosticCleanup = undefined; this.cleanups.forEach(fn => fn()); this.cleanups = []; this.channel?.close(); this.channel = undefined; this.onRoom = undefined; this.master = false; this.activeRoom = false; this.controlling = false; this.memberId = ''; this.uploadToken = ''; this.connected = false; this.sequence = 0; this.code = ''; }
 }

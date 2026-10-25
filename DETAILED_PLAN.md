@@ -417,6 +417,17 @@ Verification (2026-10-17): type checking, all 150 tests, seven isolated integrat
 
 ## Verification approach
 
+### Automatic server sync diagnostics
+
+- [x] Upload only debug-enabled active room sessions using musician identity/local join token, with 50-event snapshots, five-second intervals, one in-flight send and 120-attempt cap.
+- [x] Add strict whitelisted report schema and own-namespace/active-lifetime Firebase rules, retaining Settings-only reads/deletes and unchanged room control permissions.
+- [x] Persist local reports with serialized atomic writes and expiry-on-read cleanup; add a Settings room-code report viewer and explicit deletion.
+- [x] Add batching/failure/opt-in/lifecycle/privacy/store/UI regression tests, local HTTP authorization/schema checks and a disposable actual-service permission script.
+- [ ] Deploy Database rules and pass `scripts/test-cloud-diagnostics.mjs` against production before publishing Hosting. The branch is based on the existing unmerged pinch fix.
+- [ ] Run real iPhone Safari/Chrome collection, Settings viewing, background/network behavior and retention acceptance in TESTING.md. No automatic scheduled TTL service is added.
+
+Local verification: type checking, all 170 tests, seven isolated HTTP/PDF integration checks and the build passed. Release must deploy the new report rules and verify actual Firebase permissions before Hosting. The work is on `feat/automatic-debug-reports`, based on the existing pinch-fix commit.
+
 ### Controller pinch synchronization protection (2026-10-25)
 
 - [x] Retain the local pinch anchor and defer ordinary tagged remote positions during a controller pinch, including remaining-finger drag and final-write completion, while continuing live publishing.

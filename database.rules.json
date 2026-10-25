@@ -6,6 +6,70 @@
       ".read": false,
       ".write": false
     },
+    "syncDiagnostics": {
+      ".read": "auth != null && root.child('admins').child(auth.uid).val() === true",
+      ".write": "auth != null && root.child('admins').child(auth.uid).val() === true && !newData.exists()",
+      "$code": {
+        ".write": "auth != null && root.child('admins').child(auth.uid).val() === true && !newData.exists()",
+        "$uid": {
+          "$session": {
+            ".write": "(auth != null && root.child('admins').child(auth.uid).val() === true && !newData.exists()) || (auth != null && auth.uid === $uid && $code.matches(/^[0-9]{6}$/) && $session.matches(/^[a-f0-9]{32}$/) && root.child('rooms').child($code).child('expiresAt').val() > now && newData.exists() && newData.child('roomCreatedAt').val() === root.child('rooms').child($code).child('createdAt').val())",
+            ".validate": "newData.hasChildren(['roomCreatedAt','createdAt','updatedAt','expiresAt','batch','platform','browser','events']) && newData.child('batch').isNumber() && newData.child('batch').val() >= 1 && newData.child('batch').val() <= 120 && ((!data.exists() && newData.child('batch').val() === 1) || (data.exists() && newData.child('batch').val() === data.child('batch').val() + 1)) && newData.child('updatedAt').val() >= now - 60000 && newData.child('updatedAt').val() <= now + 60000 && (!data.exists() || newData.child('updatedAt').val() >= data.child('updatedAt').val() + 4000) && newData.child('expiresAt').val() > now",
+            "roomCreatedAt": {
+              ".validate": "newData.isNumber() && (!data.exists() || newData.val() === data.val())"
+            },
+            "createdAt": {
+              ".validate": "newData.isNumber() && ((!data.exists() && newData.val() >= now - 600000 && newData.val() <= now + 60000) || (data.exists() && newData.val() === data.val()))"
+            },
+            "updatedAt": {
+              ".validate": "newData.isNumber() && newData.val() >= now - 60000 && newData.val() <= now + 60000 && newData.val() >= newData.parent().child('createdAt').val() && (!data.exists() || newData.val() >= data.val() + 4000)"
+            },
+            "expiresAt": {
+              ".validate": "newData.isNumber() && newData.val() === newData.parent().child('createdAt').val() + 86400000 && newData.val() > now"
+            },
+            "batch": {
+              ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 1 && newData.val() <= 120 && ((!data.exists() && newData.val() === 1) || (data.exists() && newData.val() === data.val() + 1))"
+            },
+            "platform": {
+              ".validate": "newData.isString() && newData.val().matches(/^(ios|android|other)$/) && (!data.exists() || newData.val() === data.val())"
+            },
+            "browser": {
+              ".validate": "newData.isString() && newData.val().matches(/^(safari|chrome|other)$/) && (!data.exists() || newData.val() === data.val())"
+            },
+            "events": {
+              ".validate": "newData.hasChild('0')",
+              "$index": {
+                ".validate": "$index.matches(/^([0-9]|[1-4][0-9])$/) && newData.hasChildren(['event','at'])",
+                "event": {
+                  ".validate": "newData.isString() && newData.val().matches(/^(session-start|pinch-start|pinch-final|pinch-settled|remote-deferred|position-write-failed)$/)"
+                },
+                "at": {
+                  ".validate": "newData.isNumber() && newData.val() >= 0"
+                },
+                "page": {
+                  ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 1 && newData.val() <= 10000"
+                },
+                "zoom": {
+                  ".validate": "newData.isNumber() && newData.val() >= 0.75 && newData.val() <= 4"
+                },
+                "sequence": {
+                  ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() >= 0 && newData.val() <= 9007199254740991"
+                },
+                "reason": {
+                  ".validate": "newData.isString() && newData.val().matches(/^(saved|not-saved|maxretry|write-failed)$/)"
+                },
+                "$other": {
+                  ".validate": false
+                }
+              }
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        }
+      }
+    },
     "storageConfig": {
       ".read": "auth != null",
       "githubOrigin": {

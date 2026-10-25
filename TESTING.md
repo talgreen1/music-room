@@ -34,6 +34,7 @@ Paths in the Unit column are under `src/`; Integration paths are under `scripts/
 | Create/join, room code collisions, expiry and Master ownership | `model.test.ts`, `local-rooms.test.ts`, `rooms-ownership.test.ts` (snapshot recovery, identity/creator-marker checks, expiry and controller separation), `main-recovery.test.ts` (viewer/control recovery, unchanged sequence, obsolete source completion and live follow state) | `test-local-server.mjs`; `test-cloud-rooms.mjs`; two-browser join/recovery checklist |
 | Smooth editor scrolling / own acknowledgement suppression | `rooms-control.test.ts`, `shared-control.test.ts` | Local writer-marker round trip; updated `test-cloud-control.mjs` pending rules deployment; latency/device checklist below |
 | Controller pinch protection, fixed anchor and final-write completion | `controller-pinch.test.ts`, `main-pinch.test.ts`, `gestures.test.ts`, `viewer-control.test.ts`, `viewer-pinch-cancel.test.ts`, `sync.test.ts`; `rooms-control.test.ts`/`sync-diagnostics.test.ts` cover contention messages and opt-in bounded diagnostics | iPhone/two-controller acceptance below; simulated geometry/events do not prove native WebKit behavior |
+| Automatic opt-in diagnostic reports and Settings viewer | `diagnostic-upload.test.ts`, `diagnostic-report.test.ts`, `diagnostic-store.test.ts`, `diagnostic-dialog.test.ts`, `rooms-diagnostics.test.ts`, `settings-diagnostics.test.ts` cover opt-in, bounds, one in-flight send, retries, lifecycle, separate Settings context, persistence/expiry, whitelisting and dialog close/delete behavior | `test-settings.mjs` checks actual local upload/read/delete authorization and schema limits; `test-cloud-diagnostics.mjs` must run after new rules deploy; phone acceptance below |
 | Live position updates, throttling, stale-source/sequence rejection | `sync.test.ts`, `model.test.ts`, `local-rooms.test.ts` | Local SSE/reconnect check; cloud live subscriptions; network recovery checklist |
 | Default synced Follower lock and explicit private browsing | `gestures.test.ts` covers drag/pinch, rechecking mid-gesture and controller/loading behavior; `follower-sync.test.ts` covers persistent manual opt-out | Locked-Follower browser checks below |
 | Pinch, two-axis drag, trackpad zoom and dragging over PDF links | `gestures.test.ts`, `model.test.ts`, `viewer-control.test.ts` (atomic received zoom/scroll) | Local/cloud normalized position checks; Android/iPhone gesture checklist |
@@ -66,6 +67,7 @@ Run relevant checks sequentially in a controlled session:
 ```powershell
 node --use-system-ca scripts/test-cloud-rooms.mjs
 node --use-system-ca scripts/test-cloud-control.mjs
+node --use-system-ca scripts/test-cloud-diagnostics.mjs
 node --use-system-ca scripts/test-cloud-github-storage.mjs
 ```
 
@@ -85,7 +87,17 @@ role/reconnect overrides, and a stable anchor despite simulated stale scroll pix
 - [ ] Pinch in/out at first/middle/last PDF pages, over links, at zoom limits and on image sheets. Keep one finger down after the other lifts, continue dragging and then release. The iPhone must retain the local anchor without jumping to a remote page; another viewer must continue receiving live zoom/position. Once the final write completes, new other-controller edits must apply normally. Zoom buttons and ordinary pan must still work.
 - [ ] Introduce network delay and verify delayed ordinary updates do not move the local viewer during a pinch/final write. Repeat with overlapping pinches and quick successive gestures. A transaction failure must show a readable message, release protection and not create an unlimited retry loop. Do not treat simultaneous gestures as exclusive room ownership.
 - [ ] During a pinch, switch the shared file or select an atomic search destination from the other controller, revoke this device's control, and reconnect its network. Each must interrupt the old gesture and resynchronize immediately, with no stale final write from that gesture changing the new source. A synced read-only Follower remains locked; explicit private browsing stays private.
-- [ ] Add `&syncDebug=1` to the room URL and reload. Inspect `window.musicRoomSyncDiagnostics` and console output for pinch lifecycle, suppressed remote sequences and `maxretry`/write failures. Confirm at most 50 retained entries and no credentials, room codes, file URLs or document text; without the flag no diagnostic history is created. Capture this history along with a reproduction recording if jumps remain.
+- [ ] Add `&syncDebug=1` to the room URL and reload, reproduce the pinch, wait at least five seconds with the tab open and network available, then load the room code in **Settings → Sync debug reports** from another device. Verify the correct coarse platform/browser and gesture/error events appear without a Mac or console. Repeat on iPhone Safari/Chrome and local development. Ordinary tabs must send no debug reports; remove the flag/reload to stop. Optional local console history stays capped at 50 events without room codes/credentials/file URLs/song text. Server report paths intentionally associate the room code and anonymous uploader/session.
+
+### Server diagnostic acceptance and release
+
+- [ ] Deploy the new Database rules, then run `node --use-system-ca scripts/test-cloud-diagnostics.mjs` before Hosting. It checks anonymous/other-UID/expired-room/schema/oversize/rapid/nested-update denial, permitted own reports without room-control grants, musician read/delete denial and Settings read/delete. It creates/removes only its test room/reports/temporary identities; inspect any cleanup failure. This actual-service check has not yet been run for the new rules.
+- [ ] On iPhone, collect and read reports through Settings without developer tools. Check session separation on reload, late loading after room expiry, manual deletion and reload-to-restart behavior. Network failures/backgrounding must not interrupt music-room controls; delivery is best-effort rather than guaranteed after closure.
+- [ ] Verify report expiry after 24 hours and cleanup on loading that code in Settings. There is no automatic scheduled purge of never-requested room codes. Verify reports can be read only by Settings, and locking/closing Settings prevents late report responses from appearing. No report data may include passwords/tokens, URLs, full user agent or song text.
+
+Local tests do not prove Firebase permission enforcement. A Java runtime/emulator
+is not available in this workspace, so the rules must receive the actual-service
+check above before the dependent frontend is published.
 
 Search result headings: `search-dialog.test.ts` verifies bold matched text before
 file/page details, Hebrew text direction, filename/title matches, safe text rendering
