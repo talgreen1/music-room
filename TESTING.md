@@ -91,13 +91,13 @@ role/reconnect overrides, and a stable anchor despite simulated stale scroll pix
 
 ### Server diagnostic acceptance and release
 
-- [ ] Deploy the new Database rules, then run `node --use-system-ca scripts/test-cloud-diagnostics.mjs` before Hosting. It checks anonymous/other-UID/expired-room/schema/oversize/rapid/nested-update denial, permitted own reports without room-control grants, musician read/delete denial and Settings read/delete. It creates/removes only its test room/reports/temporary identities; inspect any cleanup failure. This actual-service check has not yet been run for the new rules.
+- [x] Deploy the new Database rules, then run `node --use-system-ca scripts/test-cloud-diagnostics.mjs` before Hosting. It checks anonymous/other-UID/expired-room/schema/oversize/rapid/nested-update denial, permitted own reports without room-control grants, musician read/delete denial and Settings read/delete. Passed on 2026-10-25; all test reports, room and temporary identities were cleaned. The existing cloud room-control regression also passed, followed by Hosting and exact live-bundle verification.
 - [ ] On iPhone, collect and read reports through Settings without developer tools. Check session separation on reload, late loading after room expiry, manual deletion and reload-to-restart behavior. Network failures/backgrounding must not interrupt music-room controls; delivery is best-effort rather than guaranteed after closure.
 - [ ] Verify report expiry after 24 hours and cleanup on loading that code in Settings. There is no automatic scheduled purge of never-requested room codes. Verify reports can be read only by Settings, and locking/closing Settings prevents late report responses from appearing. No report data may include passwords/tokens, URLs, full user agent or song text.
 
 Local tests do not prove Firebase permission enforcement. A Java runtime/emulator
-is not available in this workspace, so the rules must receive the actual-service
-check above before the dependent frontend is published.
+is not available in this workspace; the actual-service check above verified the
+deployed rules before the dependent frontend was published on 2026-10-25.
 
 Search result headings: `search-dialog.test.ts` verifies bold matched text before
 file/page details, Hebrew text direction, filename/title matches, safe text rendering

@@ -423,10 +423,12 @@ Verification (2026-10-17): type checking, all 150 tests, seven isolated integrat
 - [x] Add strict whitelisted report schema and own-namespace/active-lifetime Firebase rules, retaining Settings-only reads/deletes and unchanged room control permissions.
 - [x] Persist local reports with serialized atomic writes and expiry-on-read cleanup; add a Settings room-code report viewer and explicit deletion.
 - [x] Add batching/failure/opt-in/lifecycle/privacy/store/UI regression tests, local HTTP authorization/schema checks and a disposable actual-service permission script.
-- [ ] Deploy Database rules and pass `scripts/test-cloud-diagnostics.mjs` against production before publishing Hosting. The branch is based on the existing unmerged pinch fix.
+- [x] Deploy Database rules and pass `scripts/test-cloud-diagnostics.mjs` against production before publishing Hosting (2026-10-25). The branch is based on the existing unmerged pinch fix.
 - [ ] Run real iPhone Safari/Chrome collection, Settings viewing, background/network behavior and retention acceptance in TESTING.md. No automatic scheduled TTL service is added.
 
 Local verification: type checking, all 170 tests, seven isolated HTTP/PDF integration checks and the build passed. Release must deploy the new report rules and verify actual Firebase permissions before Hosting. The work is on `feat/automatic-debug-reports`, based on the existing pinch-fix commit.
+
+Deployment evidence (2026-10-25): new Database rules deployed after Firebase syntax validation. Actual diagnostic permissions/schema/batch/read/delete checks passed and removed their reports, room and temporary identities; the existing cloud room-control regression also passed. Hosting was published afterward and live JavaScript/CSS matched deployment output byte-for-byte. Source is committed/pushed on `feat/automatic-debug-reports`; no PR or merge was requested. Actual iPhone collection/UI acceptance remains pending.
 
 ### Controller pinch synchronization protection (2026-10-25)
 
