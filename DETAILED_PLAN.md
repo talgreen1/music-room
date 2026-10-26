@@ -504,6 +504,9 @@ Do not treat a successful build or local BroadcastChannel demo as proof of cross
 
 ## Smooth scrolling with multiple controllers
 
+- [x] Coalesce repeated viewer pointer input per display frame, flush the final position, discard canceled queued input, cache page geometry and retain visible canvases until replacement rendering succeeds. Add regressions for stale/failed renders and image tiles.
+- [ ] Verify iPad/iPhone pinch/scroll smoothness and absence of blank flashes on the updated rendering implementation. Room 168411 and its October 26 video show this problem in the deployed geometry-tracing build; this rendering update has not yet been deployed.
+
 - [x] Identify browser-specific position origins and skip delayed own echoes while editing.
 - [x] Preserve other-editor following, source destinations, reconnect and permission-transition resynchronization.
 - [x] Validate optional marker in local/cloud schema while supporting legacy positions.

@@ -7,6 +7,7 @@ import { PdfGestures, type Point } from './gestures';
 import { resolvePdfLink } from './pdf-links';
 import { validateSheet, type ImageSheet } from './sheets';
 import { PinchDiagnostics } from './pinch-diagnostics';
+import { ViewerGestureFrames } from './viewer-gesture-frames';
 GlobalWorkerOptions.workerSrc = worker;
 export class SongbookViewer {
   private pdf?: PDFDocumentProxy;
@@ -27,6 +28,8 @@ export class SongbookViewer {
   private settledPosition?: ReadingTarget;
   private renderTimer?: ReturnType<typeof setTimeout>;
   private gestures: PdfGestures;
+  private gestureFrames: ViewerGestureFrames;
+  private pageGeometry?: { tops: number[]; heights: number[] };
   private events = new AbortController();
   private generation = 0;
   private sourceRevision = 0;
@@ -44,14 +47,17 @@ export class SongbookViewer {
   private pinchDiagnostics = new PinchDiagnostics();
   constructor(private host: HTMLElement) {
     host.addEventListener('scroll', () => this.emitPosition(), { passive: true, signal: this.events.signal });
+    this.gestureFrames = new ViewerGestureFrames(() => this.zoom, (value, from, to) => this.zoomAt(value, from, to), (dx, dy) => {
+      this.pinchDiagnostics.cancel(); this.pinchAnchor = undefined; this.cancelFollow(); host.scrollLeft += dx; host.scrollTop += dy; this.emitPosition();
+    });
     this.gestures = new PdfGestures(host, {
       locked: () => host.classList.contains('locked') || (!this.pdf && !this.sheet),
       start: () => { this.onInteractionStart?.(); this.cancelFollow(); },
-      end: () => { if (!this.cancellingGesture) this.emitPosition(); this.onInteractionEnd?.(); },
-      pan: (dx, dy) => { this.pinchDiagnostics.cancel(); this.pinchAnchor = undefined; this.cancelFollow(); host.scrollLeft += dx; host.scrollTop += dy; this.emitPosition(); },
-      zoom: (factor, from, to) => this.zoomAt(this.zoom * factor, from, to),
-      pinchStart: () => { this.pinchDiagnostics.cancel(); this.pinching = true; this.pinchAnchor = undefined; this.cancelFollow(); this.onPinchStart?.(); },
-      pinchEnd: () => { if (!this.cancellingGesture) this.pinchDiagnostics.finish(); this.pinching = false; this.pinchAnchor = undefined; this.onPinchEnd?.(); }
+      end: () => { if (!this.cancellingGesture) { this.gestureFrames.flush(); this.emitPosition(); } this.onInteractionEnd?.(); },
+      pan: (dx, dy) => this.gestureFrames.pan(dx, dy),
+      zoom: (factor, from, to) => this.gestureFrames.zoom(factor, from, to),
+      pinchStart: () => { this.gestureFrames.flush(); clearTimeout(this.renderTimer); this.invalidateRenders(); this.pinchDiagnostics.cancel(); this.pinching = true; this.pinchAnchor = undefined; this.cancelFollow(); this.onPinchStart?.(); },
+      pinchEnd: () => { if (!this.cancellingGesture) this.pinchDiagnostics.finish(); this.pinching = false; this.pinchAnchor = undefined; if (!this.cancellingGesture) this.scheduleRender(); this.onPinchEnd?.(); }
     });
     host.addEventListener('wheel', event => {
       if (event.ctrlKey || host.classList.contains('locked')) return;
@@ -76,7 +82,7 @@ export class SongbookViewer {
     this.cancelGesture();
     this.sourceRevision++; this.cancelFollow(); this.observer?.disconnect(); this.observer = undefined;
     clearTimeout(this.renderTimer); this.generation++; this.tasks.forEach(task => task.cancel()); this.tasks.clear();
-    this.visible.clear(); this.links.clear(); this.pages = []; this.ratios = []; this.sheet = undefined; this.pdf = undefined;
+    this.visible.clear(); this.links.clear(); this.pages = []; this.ratios = []; this.pageGeometry = undefined; this.sheet = undefined; this.pdf = undefined;
     void this.loading?.destroy(); this.loading = undefined;
     this.zoom = 1; this.host.classList.remove('image-sheet'); this.host.innerHTML = '';
   }
@@ -115,26 +121,31 @@ export class SongbookViewer {
       if (this.destroyed || revision !== this.sourceRevision) return;
       for (const entry of entries) {
         const index = Number((entry.target as HTMLElement).dataset.page) - 1;
-        if (entry.isIntersecting) { this.visible.add(index); void this.render(index); }
-        else { this.visible.delete(index); this.tasks.get(index)?.cancel(); this.pages[index].querySelector('canvas, img')?.remove(); }
+        if (entry.isIntersecting) { this.visible.add(index); if (!this.pinching) void this.render(index); }
+        else { this.visible.delete(index); if (!this.pinching) { this.tasks.get(index)?.cancel(); this.tasks.delete(index); this.pages[index].querySelector('canvas, img')?.remove(); } }
       }
     }, { root: this.host, rootMargin: '700px' });
     this.pages.forEach(page => this.observer!.observe(page));
   }
   private layout() {
-    this.generation++; this.tasks.forEach(task => task.cancel()); this.tasks.clear();
+    this.invalidateRenders(); this.pageGeometry = undefined;
     const width = Math.max(200, Math.min(this.host.clientWidth - 24, 1000)) * this.zoom;
     // Scale existing canvases during gestures, then refresh their resolution after
     // zoom settles. Re-rendering on every pointer move causes flicker and backlog.
     this.pages.forEach((page, index) => { page.style.width = `${width}px`; page.style.height = `${width * this.ratios[index]}px`; });
+    this.scheduleRender();
+  }
+  private invalidateRenders() { this.generation++; this.tasks.forEach(task => task.cancel()); this.tasks.clear(); }
+  private scheduleRender() {
     clearTimeout(this.renderTimer);
+    if (this.pinching || this.destroyed) return;
     this.renderTimer = setTimeout(() => {
-      this.generation++; this.tasks.forEach(task => task.cancel()); this.tasks.clear();
-      this.pages.forEach(page => page.querySelector('canvas')?.remove());
+      this.pages.forEach((page, index) => { if (!this.visible.has(index)) page.querySelector('canvas, img')?.remove(); });
       this.visible.forEach(index => void this.render(index));
     }, 120);
   }
   private async render(index: number) {
+    if (this.pinching || this.destroyed || !this.visible.has(index)) return;
     if (this.sheet) {
       const element = this.pages[index];
       if (element.querySelector('img')) return;
@@ -148,19 +159,23 @@ export class SongbookViewer {
     if (!this.links.has(index)) this.links.set(index, this.addLinks(index));
     const generation = this.generation;
     const element = this.pages[index];
-    if (!this.pdf || this.tasks.has(index) || element.querySelector('canvas')) return;
+    const upToDate = () => Number(element.querySelector('canvas')?.dataset.renderWidth) === element.clientWidth;
+    if (!this.pdf || this.tasks.has(index) || upToDate()) return;
     let canvas: HTMLCanvasElement | undefined;
     let task: RenderTask | undefined;
     try {
       const page = await this.pdf.getPage(index + 1);
-      if (generation !== this.generation || !this.visible.has(index) || this.tasks.has(index) || element.querySelector('canvas')) return;
+      if (generation !== this.generation || !this.visible.has(index) || this.tasks.has(index) || upToDate()) return;
       element.querySelector('.page-render-error')?.remove();
       const viewport = page.getViewport({ scale: element.clientWidth / page.getViewport({ scale: 1 }).width });
       const ratio = Math.min(devicePixelRatio || 1, 2, Math.sqrt(4000000 / (viewport.width * viewport.height)));
       canvas = document.createElement('canvas'); canvas.width = Math.floor(viewport.width * ratio); canvas.height = Math.floor(viewport.height * ratio);
-      element.append(canvas);
+      canvas.dataset.renderWidth = String(element.clientWidth);
       task = page.render({ canvas, viewport, transform: [ratio, 0, 0, ratio, 0, 0] }); this.tasks.set(index, task);
       await task.promise;
+      if (this.destroyed || generation !== this.generation || !this.visible.has(index) || this.tasks.get(index) !== task) return;
+      const previous = element.querySelector('canvas');
+      if (previous) previous.replaceWith(canvas); else element.append(canvas);
     } catch (error) {
       canvas?.remove();
       if (this.destroyed || generation !== this.generation || (error as Error).name === 'RenderingCancelledException') return;
@@ -213,7 +228,7 @@ export class SongbookViewer {
       if (!this.destroyed) console.error('Could not load PDF links', error);
     }
   }
-  private geometry() { return { tops: this.pages.map(page => page.offsetTop), heights: this.pages.map(page => page.offsetHeight) }; }
+  private geometry() { return this.pageGeometry ||= { tops: this.pages.map(page => page.offsetTop), heights: this.pages.map(page => page.offsetHeight) }; }
   position(): Position | undefined {
     if (!this.pages.length) return;
     const { tops, heights } = this.geometry();
@@ -223,6 +238,7 @@ export class SongbookViewer {
   private remoteFollow = false;
   private emitPosition() { const position = this.position(); if (position) { this.onPage?.(position.page); this.onPosition?.(position, this.remoteFollow); } }
   setZoom(value: number) {
+    this.gestureFrames?.cancel();
     this.cancelFollow();
     const center = { x: this.host.clientWidth / 2, y: this.host.clientHeight / 2 };
     this.zoomAt(value, center, center);
@@ -261,6 +277,7 @@ export class SongbookViewer {
   }
   jump(page: number) { this.follow({ page: Math.max(1, Math.min(this.count, Math.floor(page))), offset: 0, zoom: this.zoom, horizontal: this.position()?.horizontal }, true); }
   follow(position: Position, immediate = false, remote = false) {
+    this.gestureFrames?.cancel();
     this.pinchDiagnostics?.cancel();
     if (!this.pages.length) return;
     this.remoteFollow = remote;
@@ -299,10 +316,12 @@ export class SongbookViewer {
   }
   cancelFollow() { this.remoteFollow = false; cancelAnimationFrame(this.frame); this.target = undefined; this.sharedPosition = undefined; this.settledPosition = undefined; }
   cancelGesture() {
+    this.gestureFrames?.cancel();
     this.pinchDiagnostics?.cancel();
     this.cancellingGesture = true;
     try { this.gestures.cancel(); }
     finally { this.cancellingGesture = false; this.pinching = false; this.pinchAnchor = undefined; }
+    this.scheduleRender();
   }
   async search(query: string): Promise<{ page: number; text: string }[]> {
     if (!this.pdf) return [];
