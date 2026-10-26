@@ -505,7 +505,8 @@ Do not treat a successful build or local BroadcastChannel demo as proof of cross
 ## Smooth scrolling with multiple controllers
 
 - [x] Add bounded, local low-resolution PDF previews for newly revealed zoom-out pages. Reuse finished renders, prepare missing previews serially outside gestures/detail rendering, reject stale jobs and dispose on source/room exit. Add cache, pixel, lifecycle and viewer regressions plus actual low-resolution PDF rendering coverage.
-- [ ] Verify the nearby-preview implementation on iPad/iPhone: reduction of the brief large-zoom-out flash, retained smoothness, bounded memory and no sync/permission regressions. This preview update is local and has not yet been deployed.
+- [x] Commit/push nearby-preview update `44a9b33` on `feat/automatic-debug-reports` and deploy Hosting (2026-10-26). Live JS/CSS matched deployment output and the remote source commit was verified. No merge was performed.
+- [ ] Verify the nearby-preview implementation on iPad/iPhone: reduction of the brief large-zoom-out flash, retained smoothness, bounded memory and no sync/permission regressions. This preview update is deployed for device testing.
 
 - [x] Coalesce repeated viewer pointer input per display frame, flush the final position, discard canceled queued input, cache page geometry and retain visible canvases until replacement rendering succeeds. Add regressions for stale/failed renders and image tiles.
 - [x] Commit/push rendering update `8def18d` on `feat/automatic-debug-reports` and deploy Hosting (2026-10-26); live JS/CSS matched deployment output. No merge was requested or performed.
