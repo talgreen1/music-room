@@ -504,6 +504,9 @@ Do not treat a successful build or local BroadcastChannel demo as proof of cross
 
 ## Smooth scrolling with multiple controllers
 
+- [x] Add bounded, local low-resolution PDF previews for newly revealed zoom-out pages. Reuse finished renders, prepare missing previews serially outside gestures/detail rendering, reject stale jobs and dispose on source/room exit. Add cache, pixel, lifecycle and viewer regressions plus actual low-resolution PDF rendering coverage.
+- [ ] Verify the nearby-preview implementation on iPad/iPhone: reduction of the brief large-zoom-out flash, retained smoothness, bounded memory and no sync/permission regressions. This preview update is local and has not yet been deployed.
+
 - [x] Coalesce repeated viewer pointer input per display frame, flush the final position, discard canceled queued input, cache page geometry and retain visible canvases until replacement rendering succeeds. Add regressions for stale/failed renders and image tiles.
 - [x] Commit/push rendering update `8def18d` on `feat/automatic-debug-reports` and deploy Hosting (2026-10-26); live JS/CSS matched deployment output. No merge was requested or performed.
 - [ ] Verify iPad/iPhone pinch/scroll smoothness and absence of blank flashes on the updated rendering implementation. Room 168411 and its October 26 video show this problem in the preceding geometry-tracing build; the rendering update is now deployed for device testing.

@@ -8,6 +8,7 @@ import { resolvePdfLink } from './pdf-links';
 import { validateSheet, type ImageSheet } from './sheets';
 import { PinchDiagnostics } from './pinch-diagnostics';
 import { ViewerGestureFrames } from './viewer-gesture-frames';
+import { PdfPreviews } from './pdf-previews';
 GlobalWorkerOptions.workerSrc = worker;
 export class SongbookViewer {
   private pdf?: PDFDocumentProxy;
@@ -30,6 +31,7 @@ export class SongbookViewer {
   private gestures: PdfGestures;
   private gestureFrames: ViewerGestureFrames;
   private pageGeometry?: { tops: number[]; heights: number[] };
+  private previews?: PdfPreviews;
   private events = new AbortController();
   private generation = 0;
   private sourceRevision = 0;
@@ -42,6 +44,7 @@ export class SongbookViewer {
   onPinchStart?: () => void;
   onPinchEnd?: () => void;
   private pinching = false;
+  private interacting = false;
   private cancellingGesture = false;
   private pinchAnchor?: Position & { horizontal: number };
   private pinchDiagnostics = new PinchDiagnostics();
@@ -52,11 +55,16 @@ export class SongbookViewer {
     });
     this.gestures = new PdfGestures(host, {
       locked: () => host.classList.contains('locked') || (!this.pdf && !this.sheet),
-      start: () => { this.onInteractionStart?.(); this.cancelFollow(); },
-      end: () => { if (!this.cancellingGesture) { this.gestureFrames.flush(); this.emitPosition(); } this.onInteractionEnd?.(); },
+      start: () => { this.interacting = true; this.previews?.setPaused(true); this.onInteractionStart?.(); this.cancelFollow(); },
+      end: () => {
+        if (!this.cancellingGesture) { this.gestureFrames.flush(); this.emitPosition(); }
+        this.interacting = false;
+        if (!this.pinching && !this.cancellingGesture) this.scheduleRender();
+        this.onInteractionEnd?.();
+      },
       pan: (dx, dy) => this.gestureFrames.pan(dx, dy),
       zoom: (factor, from, to) => this.gestureFrames.zoom(factor, from, to),
-      pinchStart: () => { this.gestureFrames.flush(); clearTimeout(this.renderTimer); this.invalidateRenders(); this.pinchDiagnostics.cancel(); this.pinching = true; this.pinchAnchor = undefined; this.cancelFollow(); this.onPinchStart?.(); },
+      pinchStart: () => { this.gestureFrames.flush(); clearTimeout(this.renderTimer); this.previews?.setPaused(true); this.invalidateRenders(); this.pinchDiagnostics.cancel(); this.pinching = true; this.pinchAnchor = undefined; this.cancelFollow(); this.onPinchStart?.(); },
       pinchEnd: () => { if (!this.cancellingGesture) this.pinchDiagnostics.finish(); this.pinching = false; this.pinchAnchor = undefined; if (!this.cancellingGesture) this.scheduleRender(); this.onPinchEnd?.(); }
     });
     host.addEventListener('wheel', event => {
@@ -79,6 +87,7 @@ export class SongbookViewer {
   }
   get count() { return this.sheet?.segments.length || this.pdf?.numPages || 0; }
   private resetSource() {
+    this.previews?.dispose(); this.previews = undefined;
     this.cancelGesture();
     this.sourceRevision++; this.cancelFollow(); this.observer?.disconnect(); this.observer = undefined;
     clearTimeout(this.renderTimer); this.generation++; this.tasks.forEach(task => task.cancel()); this.tasks.clear();
@@ -112,6 +121,7 @@ export class SongbookViewer {
       element.innerHTML = `<span class="page-placeholder">${n}</span>`;
       this.ratios.push(viewport.height / viewport.width); this.pages.push(element); this.host.append(element);
     }
+    this.previews = new PdfPreviews(pdf, () => { if (!this.destroyed && revision === this.sourceRevision) this.showPreviews(); });
     this.layout();
     this.observePages();
   }
@@ -124,6 +134,7 @@ export class SongbookViewer {
         if (entry.isIntersecting) { this.visible.add(index); if (!this.pinching) void this.render(index); }
         else { this.visible.delete(index); if (!this.pinching) { this.tasks.get(index)?.cancel(); this.tasks.delete(index); this.pages[index].querySelector('canvas, img')?.remove(); } }
       }
+      this.updatePreviews(); this.showPreviews();
     }, { root: this.host, rootMargin: '700px' });
     this.pages.forEach(page => this.observer!.observe(page));
   }
@@ -133,16 +144,31 @@ export class SongbookViewer {
     // Scale existing canvases during gestures, then refresh their resolution after
     // zoom settles. Re-rendering on every pointer move causes flicker and backlog.
     this.pages.forEach((page, index) => { page.style.width = `${width}px`; page.style.height = `${width * this.ratios[index]}px`; });
+    this.showPreviews();
     this.scheduleRender();
   }
   private invalidateRenders() { this.generation++; this.tasks.forEach(task => task.cancel()); this.tasks.clear(); }
   private scheduleRender() {
     clearTimeout(this.renderTimer);
+    this.previews?.setPaused(this.pinching || this.interacting || this.tasks.size > 0);
     if (this.pinching || this.destroyed) return;
     this.renderTimer = setTimeout(() => {
       this.pages.forEach((page, index) => { if (!this.visible.has(index)) page.querySelector('canvas, img')?.remove(); });
+      this.updatePreviews(); this.showPreviews();
       this.visible.forEach(index => void this.render(index));
     }, 120);
+  }
+  private updatePreviews() {
+    const visible = [...this.visible], indices = [...visible];
+    for (const distance of [1, 2]) for (const index of visible) indices.push(index - distance, index + distance);
+    this.previews?.update([...new Set(indices)]);
+  }
+  private showPreviews() {
+    if (!this.previews) return;
+    for (const [index, canvas] of this.previews.entries()) {
+      const page = this.pages[index];
+      if (page && !page.querySelector('canvas, img')) page.append(canvas);
+    }
   }
   private async render(index: number) {
     if (this.pinching || this.destroyed || !this.visible.has(index)) return;
@@ -172,10 +198,12 @@ export class SongbookViewer {
       canvas = document.createElement('canvas'); canvas.width = Math.floor(viewport.width * ratio); canvas.height = Math.floor(viewport.height * ratio);
       canvas.dataset.renderWidth = String(element.clientWidth);
       task = page.render({ canvas, viewport, transform: [ratio, 0, 0, ratio, 0, 0] }); this.tasks.set(index, task);
+      this.previews?.setPaused(true);
       await task.promise;
       if (this.destroyed || generation !== this.generation || !this.visible.has(index) || this.tasks.get(index) !== task) return;
       const previous = element.querySelector('canvas');
       if (previous) previous.replaceWith(canvas); else element.append(canvas);
+      this.previews?.remember(index, canvas);
     } catch (error) {
       canvas?.remove();
       if (this.destroyed || generation !== this.generation || (error as Error).name === 'RenderingCancelledException') return;
@@ -187,7 +215,10 @@ export class SongbookViewer {
       const retry = document.createElement('button'); retry.className = 'secondary'; retry.textContent = 'Retry page';
       retry.onclick = () => { notice.remove(); void this.render(index); };
       notice.append(text, retry); element.append(notice);
-    } finally { if (task && this.tasks.get(index) === task) this.tasks.delete(index); }
+    } finally {
+      if (task && this.tasks.get(index) === task) this.tasks.delete(index);
+      this.previews?.setPaused(this.pinching || this.interacting || this.tasks.size > 0);
+    }
   }
   private async addLinks(index: number) {
     try {
@@ -334,5 +365,5 @@ export class SongbookViewer {
     }
     return matches;
   }
-  destroy() { this.destroyed = true; this.cancelGesture(); this.events.abort(); this.gestures.destroy(); clearTimeout(this.renderTimer); cancelAnimationFrame(this.frame); this.observer?.disconnect(); this.resizeObserver.disconnect(); this.tasks.forEach(task => task.cancel()); void this.loading?.destroy(); }
+  destroy() { this.destroyed = true; this.previews?.dispose(); this.previews = undefined; this.cancelGesture(); this.events.abort(); this.gestures.destroy(); clearTimeout(this.renderTimer); cancelAnimationFrame(this.frame); this.observer?.disconnect(); this.resizeObserver.disconnect(); this.tasks.forEach(task => task.cancel()); void this.loading?.destroy(); }
 }

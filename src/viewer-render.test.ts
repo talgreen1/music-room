@@ -104,3 +104,28 @@ it('can restart a canceled render immediately when a page leaves and reenters th
   const current = t.page.querySelector('canvas'); finishOld(); await oldWork;
   expect(t.page.querySelector('canvas')).toBe(current);
 });
+it('shows a cached preview during pinch layout and keeps it until a detailed replacement finishes', async () => {
+  const t = fixture(); t.old.remove(); const preview = document.createElement('canvas'); preview.dataset.preview = 'true';
+  const cache = { entries: () => new Map([[0, preview]]).entries(), setPaused: vi.fn(), update: vi.fn(), remember: vi.fn(), dispose: vi.fn() };
+  t.state.previews = cache; t.state.pinching = true; t.state.layout();
+  expect(t.page.querySelector('canvas')).toBe(preview); expect(cache.setPaused).toHaveBeenLastCalledWith(true);
+  await vi.advanceTimersByTimeAsync(500); expect(t.pdfPage.render).not.toHaveBeenCalled();
+  t.state.pinching = false; t.state.scheduleRender(); await vi.advanceTimersByTimeAsync(120);
+  expect(t.page.querySelector('canvas')).toBe(preview);
+  t.complete(); await vi.advanceTimersByTimeAsync(0);
+  expect(t.page.querySelector('canvas')).toBe(t.replacement()); expect(cache.remember).toHaveBeenCalledWith(0, t.replacement());
+  expect(cache.setPaused).toHaveBeenLastCalledWith(false);
+});
+it('selects bounded nearby pages for previews and disposes them on source reset', () => {
+  const t = fixture(), cache = { entries: () => new Map().entries(), setPaused: vi.fn(), update: vi.fn(), dispose: vi.fn() };
+  t.state.previews = cache; t.state.visible = new Set([10]); t.state.updatePreviews();
+  expect(cache.update).toHaveBeenCalledWith([10, 9, 11, 8, 12]);
+  t.state.resetSource(); expect(cache.dispose).toHaveBeenCalledOnce(); expect(t.state.previews).toBeUndefined();
+});
+it('pauses preview work while dragging and resumes after release', () => {
+  const t = fixture(), cache = { entries: () => new Map().entries(), setPaused: vi.fn(), update: vi.fn(), dispose: vi.fn() };
+  t.state.previews = cache; h.callbacks.start();
+  expect(cache.setPaused).toHaveBeenLastCalledWith(true); t.state.scheduleRender();
+  expect(cache.setPaused).toHaveBeenLastCalledWith(true);
+  h.callbacks.end(); expect(cache.setPaused).toHaveBeenLastCalledWith(false);
+});

@@ -34,5 +34,17 @@ try {
     }
     assert(inkPixels > 1000, `Page ${pageNumber} should contain visible text/score pixels (found ${inkPixels})`);
     console.log(`PASS: page ${pageNumber} renders ${inkPixels} ink pixels with modern built-ins initially absent.`);
+    // Verify actual PDF.js can draw the small detached canvases used as zoom fallbacks.
+    const original = page.getViewport({ scale: 1 });
+    const previewScale = Math.min(256 / original.width, Math.sqrt(98304 / (original.width * original.height)));
+    const previewViewport = page.getViewport({ scale: previewScale });
+    const preview = createCanvas(Math.max(1, Math.floor(previewViewport.width)), Math.max(1, Math.floor(previewViewport.height)));
+    await page.render({ canvas: preview, viewport: previewViewport }).promise;
+    assert(preview.width * preview.height <= 98304);
+    const previewPixels = preview.getContext('2d').getImageData(0, 0, preview.width, preview.height).data;
+    let previewInk = 0;
+    for (let index = 0; index < previewPixels.length; index += 4) if (Math.min(previewPixels[index], previewPixels[index + 1], previewPixels[index + 2]) < 180 && previewPixels[index + 3] > 0) previewInk++;
+    assert(previewInk > 10, `Low-resolution preview of page ${pageNumber} must contain document pixels.`);
+    console.log(`PASS: page ${pageNumber} low-resolution preview contains ${previewInk} ink pixels within its pixel cap.`);
   }
 } finally { await pdf.destroy(); }
