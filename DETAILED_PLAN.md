@@ -420,7 +420,8 @@ Verification (2026-10-17): type checking, all 150 tests, seven isolated integrat
 ### Automatic server sync diagnostics
 
 - [x] Add opt-in iPad/iPhone pinch geometry measurements comparing the requested target with immediate and delayed browser coordinates; bound sampling/history and cancel obsolete callbacks. Cover schema/privacy, viewer measurements, scheduling and local storage round trips.
-- [ ] Deploy expanded geometry rules, verify actual cloud permissions, publish frontend and correlate a physical iPad/iPhone recording with detailed measurements. The October 26 iPad report/video confirms a jump remains; the exact cause is not established.
+- [x] Deploy expanded geometry rules, verify actual cloud permissions and publish frontend (2026-10-26). Live JS/CSS matched deployment output and included geometry-tracing markers; disposable cloud test records/identities were cleaned.
+- [ ] Correlate a physical iPad/iPhone recording with detailed measurements. The October 26 iPad report/video confirms a jump remains; the exact cause is not established.
 
 - [x] Upload only debug-enabled active room sessions using musician identity/local join token, with 50-event snapshots, five-second intervals, one in-flight send and 120-attempt cap.
 - [x] Add strict whitelisted report schema and own-namespace/active-lifetime Firebase rules, retaining Settings-only reads/deletes and unchanged room control permissions.
