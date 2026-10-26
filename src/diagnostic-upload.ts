@@ -1,4 +1,4 @@
-import { DIAGNOSTIC_RETENTION, validateDiagnosticReport, type DiagnosticReport, type SyncDiagnostic } from './diagnostic-report';
+import { appendDiagnostic, DIAGNOSTIC_RETENTION, validateDiagnosticReport, type DiagnosticReport, type SyncDiagnostic } from './diagnostic-report';
 import { diagnosticUploadsEnabled, recordSyncDiagnostic, subscribeSyncDiagnostics } from './sync-diagnostics';
 
 /** Best-effort snapshots, at most one write in flight and 120 attempts/session. */
@@ -9,7 +9,7 @@ export function startDiagnosticUpload(roomCreatedAt: number, send: (report: Diag
   const platform = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'ios' : /Android/i.test(ua) ? 'android' : 'other';
   const browser = /CriOS|Chrome\//i.test(ua) ? 'chrome' : /Safari\//i.test(ua) ? 'safari' : 'other';
   let alive = true, busy = false, revision = 0, savedRevision = 0, batch = 0, attempts = 0, lastAttempt = createdAt;
-  const unsubscribe = subscribeSyncDiagnostics(entry => { entries.push(entry); if (entries.length > 50) entries.shift(); revision++; });
+  const unsubscribe = subscribeSyncDiagnostics(entry => { appendDiagnostic(entries, entry); revision++; });
   const flush = async () => {
     if (!alive || !diagnosticUploadsEnabled() || busy || attempts >= 120 || revision === savedRevision || now() - lastAttempt < 5000) return;
     busy = true; attempts++; lastAttempt = now(); const sendingRevision = revision;

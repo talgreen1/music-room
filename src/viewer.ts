@@ -6,6 +6,7 @@ import { clampZoom, horizontalOffset, horizontalLeft, locatePosition, positionTo
 import { PdfGestures, type Point } from './gestures';
 import { resolvePdfLink } from './pdf-links';
 import { validateSheet, type ImageSheet } from './sheets';
+import { PinchDiagnostics } from './pinch-diagnostics';
 GlobalWorkerOptions.workerSrc = worker;
 export class SongbookViewer {
   private pdf?: PDFDocumentProxy;
@@ -40,16 +41,17 @@ export class SongbookViewer {
   private pinching = false;
   private cancellingGesture = false;
   private pinchAnchor?: Position & { horizontal: number };
+  private pinchDiagnostics = new PinchDiagnostics();
   constructor(private host: HTMLElement) {
     host.addEventListener('scroll', () => this.emitPosition(), { passive: true, signal: this.events.signal });
     this.gestures = new PdfGestures(host, {
       locked: () => host.classList.contains('locked') || (!this.pdf && !this.sheet),
       start: () => { this.onInteractionStart?.(); this.cancelFollow(); },
       end: () => { if (!this.cancellingGesture) this.emitPosition(); this.onInteractionEnd?.(); },
-      pan: (dx, dy) => { this.pinchAnchor = undefined; this.cancelFollow(); host.scrollLeft += dx; host.scrollTop += dy; this.emitPosition(); },
+      pan: (dx, dy) => { this.pinchDiagnostics.cancel(); this.pinchAnchor = undefined; this.cancelFollow(); host.scrollLeft += dx; host.scrollTop += dy; this.emitPosition(); },
       zoom: (factor, from, to) => this.zoomAt(this.zoom * factor, from, to),
-      pinchStart: () => { this.pinching = true; this.pinchAnchor = undefined; this.cancelFollow(); this.onPinchStart?.(); },
-      pinchEnd: () => { this.pinching = false; this.pinchAnchor = undefined; this.onPinchEnd?.(); }
+      pinchStart: () => { this.pinchDiagnostics.cancel(); this.pinching = true; this.pinchAnchor = undefined; this.cancelFollow(); this.onPinchStart?.(); },
+      pinchEnd: () => { if (!this.cancellingGesture) this.pinchDiagnostics.finish(); this.pinching = false; this.pinchAnchor = undefined; this.onPinchEnd?.(); }
     });
     host.addEventListener('wheel', event => {
       if (event.ctrlKey || host.classList.contains('locked')) return;
@@ -236,6 +238,7 @@ export class SongbookViewer {
   private zoomAt(value: number, from: Point, to: Point) {
     this.cancelFollow();
     if (!this.pages.length) return;
+    const beforeTop = this.host.scrollTop;
     const { tops, heights } = this.geometry();
     const anchor = this.pinchAnchor || locatePosition(tops, heights, this.host.scrollTop + from.y);
     const page = this.pages[anchor.page - 1];
@@ -244,12 +247,21 @@ export class SongbookViewer {
     const nextZoom = clampZoom(value);
     if (nextZoom !== this.zoom) { this.zoom = nextZoom; this.layout(); }
     const geometry = this.geometry();
-    this.host.scrollTop = positionTop(anchor, geometry.tops, geometry.heights) - to.y;
-    this.host.scrollLeft = page.offsetLeft + horizontalAnchor * page.offsetWidth - to.x;
+    const targetTop = positionTop(anchor, geometry.tops, geometry.heights) - to.y;
+    const targetLeft = page.offsetLeft + horizontalAnchor * page.offsetWidth - to.x;
+    this.host.scrollTop = targetTop;
+    this.host.scrollLeft = targetLeft;
+    if (this.pinching) this.pinchDiagnostics?.sample(() => ({
+      page: this.position()?.page, zoom: this.zoom,
+      geometry: { anchorPage: anchor.page, anchorOffset: anchor.offset, anchorTop: page.offsetTop, anchorHeight: page.offsetHeight,
+        beforeTop, targetTop, actualTop: this.host.scrollTop, targetLeft, actualLeft: this.host.scrollLeft,
+        scrollHeight: this.host.scrollHeight, viewportHeight: this.host.clientHeight }
+    }));
     this.emitPosition();
   }
   jump(page: number) { this.follow({ page: Math.max(1, Math.min(this.count, Math.floor(page))), offset: 0, zoom: this.zoom, horizontal: this.position()?.horizontal }, true); }
   follow(position: Position, immediate = false, remote = false) {
+    this.pinchDiagnostics?.cancel();
     if (!this.pages.length) return;
     this.remoteFollow = remote;
     this.sharedPosition = { ...position };
@@ -287,6 +299,7 @@ export class SongbookViewer {
   }
   cancelFollow() { this.remoteFollow = false; cancelAnimationFrame(this.frame); this.target = undefined; this.sharedPosition = undefined; this.settledPosition = undefined; }
   cancelGesture() {
+    this.pinchDiagnostics?.cancel();
     this.cancellingGesture = true;
     try { this.gestures.cancel(); }
     finally { this.cancellingGesture = false; this.pinching = false; this.pinchAnchor = undefined; }
@@ -302,5 +315,5 @@ export class SongbookViewer {
     }
     return matches;
   }
-  destroy() { this.destroyed = true; this.events.abort(); this.gestures.destroy(); clearTimeout(this.renderTimer); cancelAnimationFrame(this.frame); this.observer?.disconnect(); this.resizeObserver.disconnect(); this.tasks.forEach(task => task.cancel()); void this.loading?.destroy(); }
+  destroy() { this.destroyed = true; this.cancelGesture(); this.events.abort(); this.gestures.destroy(); clearTimeout(this.renderTimer); cancelAnimationFrame(this.frame); this.observer?.disconnect(); this.resizeObserver.disconnect(); this.tasks.forEach(task => task.cancel()); void this.loading?.destroy(); }
 }

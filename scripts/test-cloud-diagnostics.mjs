@@ -21,12 +21,17 @@ try {
   }
   assert.ok(code);
   const path = `syncDiagnostics/${code}/${users[1].uid}/${id}`;
+  const geometry = { anchorPage: 113, anchorOffset: .5, anchorTop: 100000, anchorHeight: 1000, beforeTop: 50000, targetTop: 100500, actualTop: 100500, targetLeft: -20, actualLeft: 0, scrollHeight: 500000, viewportHeight: 800 };
   const report = { roomCreatedAt: now, createdAt: Date.now(), updatedAt: Date.now(), expiresAt: 0, batch: 1, platform: 'ios', browser: 'safari', events: [{ event: 'pinch-start', at: Date.now() }] }; report.expiresAt = report.createdAt + 86400000;
+  report.events.push({ event: 'pinch-layout', at: Date.now(), geometry }, { event: 'pinch-frame', at: Date.now(), geometry: { ...geometry, actualTop: 200000 } });
   await denied(await request('', path, 'PUT', report));
   await denied(await request(users[0].token, path, 'PUT', report));
   await denied(await request(users[1].token, path, 'PUT', { ...report, roomCreatedAt: now - 1 }));
   await denied(await request(users[1].token, path, 'PUT', { ...report, password: 'must-be-rejected' }));
   await denied(await request(users[1].token, path, 'PUT', { ...report, events: Array(51).fill(report.events[0]) }));
+  for (const change of [{ secret: 'reject' }, { anchorOffset: 2 }, { actualTop: 'text' }, { anchorHeight: null }]) {
+    await denied(await request(users[1].token, path, 'PUT', { ...report, events: [{ event: 'pinch-layout', at: Date.now(), geometry: { ...geometry, ...change } }] }));
+  }
   assert.ok((await request(users[1].token, path, 'PUT', report)).ok, 'A musician may write own reports without control.');
   await denied(await request(users[1].token, path)); await denied(await request(users[0].token, `syncDiagnostics/${code}`)); await denied(await request('', path));
   await denied(await request(users[1].token, path, 'DELETE'));
@@ -34,6 +39,7 @@ try {
   await denied(await request(users[1].token, path, 'PUT', { ...report, batch: 2 }));
   await denied(await request(users[1].token, `rooms/${code}/position/page`, 'PUT', 2));
   assert.equal((await session.db(path)).events[0].event, 'pinch-start');
+  assert.equal((await session.db(path)).events[2].geometry.actualTop, 200000);
   await new Promise(resolve => setTimeout(resolve, 4100));
   assert.ok((await request(users[1].token, path, 'PUT', { ...report, updatedAt: Date.now(), batch: 2 })).ok);
   await session.db(path, 'DELETE'); assert.equal(await session.db(path), null);
