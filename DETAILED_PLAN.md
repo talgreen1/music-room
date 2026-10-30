@@ -417,6 +417,33 @@ Verification (2026-10-17): type checking, all 150 tests, seven isolated integrat
 
 ## Verification approach
 
+### Automatic server sync diagnostics
+
+- [x] Add opt-in iPad/iPhone pinch geometry measurements comparing the requested target with immediate and delayed browser coordinates; bound sampling/history and cancel obsolete callbacks. Cover schema/privacy, viewer measurements, scheduling and local storage round trips.
+- [x] Deploy expanded geometry rules, verify actual cloud permissions and publish frontend (2026-10-26). Live JS/CSS matched deployment output and included geometry-tracing markers; disposable cloud test records/identities were cleaned.
+- [ ] Correlate a physical iPad/iPhone recording with detailed measurements. The October 26 iPad report/video confirms a jump remains; the exact cause is not established.
+
+- [x] Upload only debug-enabled active room sessions using musician identity/local join token, with 50-event snapshots, five-second intervals, one in-flight send and 120-attempt cap.
+- [x] Add strict whitelisted report schema and own-namespace/active-lifetime Firebase rules, retaining Settings-only reads/deletes and unchanged room control permissions.
+- [x] Persist local reports with serialized atomic writes and expiry-on-read cleanup; add a Settings room-code report viewer and explicit deletion.
+- [x] Add batching/failure/opt-in/lifecycle/privacy/store/UI regression tests, local HTTP authorization/schema checks and a disposable actual-service permission script.
+- [x] Deploy Database rules and pass `scripts/test-cloud-diagnostics.mjs` against production before publishing Hosting (2026-10-25). The branch is based on the existing unmerged pinch fix.
+- [ ] Run real iPhone Safari/Chrome collection, Settings viewing, background/network behavior and retention acceptance in TESTING.md. No automatic scheduled TTL service is added.
+
+Local verification: type checking, all 170 tests, seven isolated HTTP/PDF integration checks and the build passed. Release must deploy the new report rules and verify actual Firebase permissions before Hosting. The work is on `feat/automatic-debug-reports`, based on the existing pinch-fix commit.
+
+Deployment evidence (2026-10-25): new Database rules deployed after Firebase syntax validation. Actual diagnostic permissions/schema/batch/read/delete checks passed and removed their reports, room and temporary identities; the existing cloud room-control regression also passed. Hosting was published afterward and live JavaScript/CSS matched deployment output byte-for-byte. Source is committed/pushed on `feat/automatic-debug-reports`; no PR or merge was requested. Actual iPhone collection/UI acceptance remains pending.
+
+### Controller pinch synchronization protection (2026-10-25)
+
+- [x] Retain the local pinch anchor and defer ordinary tagged remote positions during a controller pinch, including remaining-finger drag and final-write completion, while continuing live publishing.
+- [x] Queue the settled position behind in-flight writes; handle write failure/cancellation without unbounded retries and prevent stale completions from unlocking newer gestures.
+- [x] Preserve immediate source/destination, permission and reconnect resynchronization; retain locked/private Follower behavior and monotonic server sequencing.
+- [x] Add safe opt-in diagnostics and readable transaction-contention feedback, regression tests and documentation.
+- [ ] Run the iPhone Safari/Chrome two-controller latency/gesture acceptance in TESTING.md. The supplied recording is evidence of the symptom; the exact platform-specific cause and fix are not yet confirmed on a physical iPhone.
+
+Local verification: type checking, all 160 regression/unit tests, seven isolated HTTP/PDF integration checks and the build passed. No database rules or backend schema changed. Physical iPhone verification is still required before treating this as a confirmed fix for the reported symptom.
+
 ### Master ownership recovery
 
 - [x] Recheck active room lifetime, musician identity and saved creator marker on each room snapshot; recover after missing data without granting a new participant ownership.
@@ -476,6 +503,16 @@ Do not treat a successful build or local BroadcastChannel demo as proof of cross
 - [ ] Verify real phone/desktop locked-following and opt-out/recheck behavior.
 
 ## Smooth scrolling with multiple controllers
+
+Release acceptance (2026-10-30): the user accepted the deployed version and requested PR creation, merge to main and feature-branch deletion. The accepted source includes controller pinch protection, opt-in server diagnostics, frame-coalesced rendering and bounded nearby previews. Detailed iPhone/browser/network/memory procedures remain outstanding; user acceptance does not imply that every procedure below was run.
+
+- [x] Add bounded, local low-resolution PDF previews for newly revealed zoom-out pages. Reuse finished renders, prepare missing previews serially outside gestures/detail rendering, reject stale jobs and dispose on source/room exit. Add cache, pixel, lifecycle and viewer regressions plus actual low-resolution PDF rendering coverage.
+- [x] Commit/push nearby-preview update `44a9b33` on `feat/automatic-debug-reports` and deploy Hosting (2026-10-26). Live JS/CSS matched deployment output and the remote source commit was verified. No merge was performed.
+- [ ] Verify the nearby-preview implementation on iPad/iPhone: reduction of the brief large-zoom-out flash, retained smoothness, bounded memory and no sync/permission regressions. This preview update is deployed for device testing.
+
+- [x] Coalesce repeated viewer pointer input per display frame, flush the final position, discard canceled queued input, cache page geometry and retain visible canvases until replacement rendering succeeds. Add regressions for stale/failed renders and image tiles.
+- [x] Commit/push rendering update `8def18d` on `feat/automatic-debug-reports` and deploy Hosting (2026-10-26); live JS/CSS matched deployment output. No merge was requested or performed.
+- [ ] Verify iPad/iPhone pinch/scroll smoothness and absence of blank flashes on the updated rendering implementation. Room 168411 and its October 26 video show this problem in the preceding geometry-tracing build; the rendering update is now deployed for device testing.
 
 - [x] Identify browser-specific position origins and skip delayed own echoes while editing.
 - [x] Preserve other-editor following, source destinations, reconnect and permission-transition resynchronization.

@@ -16,6 +16,29 @@ async function room(masterId = 'settings-test') {
   assert.equal(response.status, 201); const value = await response.json(); codes.push(value.code); return value;
 }
 try {
+  const debugRoom = await room('diagnostic-test'), debugSession = 'd'.repeat(32);
+  const report = { roomCreatedAt: debugRoom.room.createdAt, createdAt: Date.now(), updatedAt: Date.now(), expiresAt: 0, batch: 1, platform: 'ios', browser: 'safari', events: [{ event: 'pinch-start', at: Date.now() }] }; report.expiresAt = report.createdAt + 86400000;
+  const geometry = { anchorPage: 113, anchorOffset: .5, anchorTop: 100000, anchorHeight: 1000, beforeTop: 50000, targetTop: 100500, actualTop: 100500, targetLeft: -20, actualLeft: 0, scrollHeight: 500000, viewportHeight: 800 };
+  report.events.push({ event: 'pinch-layout', at: Date.now(), geometry }, { event: 'pinch-frame', at: Date.now(), geometry: { ...geometry, actualTop: 200000 } });
+  const diagnosticPath = `/api/local-rooms/${debugRoom.code}/diagnostics/${debugSession}`;
+  const sendReport = (value, token = debugRoom.token, path = diagnosticPath) => fetch(`${base}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(value) });
+  assert.equal((await sendReport(report, '')).status, 403);
+  assert.equal((await sendReport({ ...report, token: 'forbidden' })).status, 400);
+  for (const change of [{ secret: 'reject' }, { anchorOffset: 2 }, { actualTop: 'text' }, { anchorHeight: null }]) {
+    assert.equal((await sendReport({ ...report, events: [{ event: 'pinch-layout', at: Date.now(), geometry: { ...geometry, ...change } }] })).status, 400);
+  }
+  assert.equal((await sendReport({ ...report, roomCreatedAt: report.roomCreatedAt - 1 })).status, 400);
+  const debugFollower = await (await fetch(`${base}/api/local-rooms/${debugRoom.code}/members`, { method: 'POST' })).json();
+  assert.equal((await sendReport(report, debugFollower.token)).status, 200, 'Followers may send their own debug reports without control.');
+  assert.equal((await fetch(`${base}/api/admin/diagnostics/${debugRoom.code}`)).status, 401);
+  assert.equal((await fetch(`${base}/api/admin/diagnostics/${debugRoom.code}`, { method: 'DELETE' })).status, 401);
+  assert.equal((await sendReport({ ...report, batch: 2 }, debugFollower.token)).status, 400, 'Rapid batches are rejected.');
+  assert.equal((await sendReport({ ...report, batch: 1, events: Array(51).fill(report.events[0]) })).status, 400);
+  const debugReports = await (await request(`/api/admin/diagnostics/${debugRoom.code}`)).json();
+  assert.equal(Object.values(debugReports)[0][debugSession].events[0].event, 'pinch-start');
+  assert.equal(Object.values(debugReports)[0][debugSession].events[2].geometry.actualTop, 200000);
+  assert.equal((await request(`/api/admin/diagnostics/${debugRoom.code}`, 'DELETE')).status, 200);
+  assert.deepEqual(await (await request(`/api/admin/diagnostics/${debugRoom.code}`)).json(), {});
   assert.equal((await fetch(`${base}/api/admin/rooms`)).status, 401);
   assert.equal((await fetch(`${base}/api/admin/upload`, { method: 'POST', body: '%PDF-1.7' })).status, 401);
   // Settings imports must not disturb rooms already in progress.

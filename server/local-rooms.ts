@@ -3,6 +3,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
 import { MAX_ZOOM, MIN_ZOOM, type Room, type Position } from '../src/model';
 import { SongLibrary } from './song-library';
+import { DiagnosticStore } from './diagnostic-store';
+import type { DiagnosticReport } from '../src/diagnostic-report';
 import { roomUploads } from '../src/song-library';
 import { AdminSessions } from './admin-auth';
 import { validateSongbook, validatePdfUpload, MAX_PDF_BYTES, type Songbook } from '../src/songbook';
@@ -151,6 +153,7 @@ async function uploadPdf(req: IncomingMessage) {
 export function localRoomsPlugin(env: Record<string, string> = {}): Plugin {
   const store = new LocalRoomStore();
   const library = new SongLibrary();
+  const diagnostics = new DiagnosticStore();
   const activeSongIds = () => new Set(Object.values(store.list()).flatMap(room => room.sheet ? [room.sheet.id] : []));
   const auth = env.MUSIC_ADMIN_PASSWORD ? new AdminSessions(env.MUSIC_ADMIN_PASSWORD) : undefined;
   let current: Songbook = { pdfUrl: env.VITE_PDF_URL || '/songbooks/songbook-2026-10.pdf', pdfVersion: env.VITE_PDF_VERSION || '2026-10', pdfTitle: env.VITE_PDF_TITLE || 'חוברת שירים' };
@@ -181,6 +184,15 @@ export function localRoomsPlugin(env: Record<string, string> = {}): Plugin {
             json(res, member ? 201 : 404, member || { error: 'Room unavailable.' }); return;
           }
           const controlRoute = /^\/api\/local-rooms\/(\d{6})\/control$/.exec(url.pathname);
+          const diagnosticRoute = /^\/api\/local-rooms\/(\d{6})\/diagnostics\/([a-f0-9]{32})$/.exec(url.pathname);
+          if (diagnosticRoute && req.method === 'POST') {
+            const code = diagnosticRoute[1], token = req.headers.authorization?.replace(/^Bearer /, '') || '';
+            const owner = store.uploader(code, token), room = store.read(code);
+            if (!owner || !room) { json(res, 403, { error: 'Join an active room before sending diagnostics.' }); return; }
+            const report = await body(req) as unknown as DiagnosticReport;
+            if (store.uploader(code, token) !== owner) { json(res, 403, { error: 'Room session ended.' }); return; }
+            await diagnostics.save(code, owner, diagnosticRoute[2], report, room.createdAt); json(res, 200, { ok: true }); return;
+          }
           if (controlRoute && req.method === 'POST') {
             const input = await body(req), token = req.headers.authorization?.replace(/^Bearer /, '') || '';
             if (!['request', 'release', 'approve', 'deny'].includes(String(input.action))) throw new Error('Invalid control action.');
@@ -230,6 +242,9 @@ export function localRoomsPlugin(env: Record<string, string> = {}): Plugin {
               } catch (error) { json(res, 401, { error: (error as Error).message }); } return;
             }
             if (!auth.authorized(req.headers.cookie)) { json(res, 401, { error: 'Sign in to Settings.' }); return; }
+            const diagnosticAdmin = /^\/api\/admin\/diagnostics\/(\d{6})$/.exec(url.pathname);
+            if (diagnosticAdmin && req.method === 'GET') { json(res, 200, await diagnostics.read(diagnosticAdmin[1])); return; }
+            if (diagnosticAdmin && req.method === 'DELETE') { await diagnostics.clear(diagnosticAdmin[1]); json(res, 200, { ok: true }); return; }
             if (url.pathname === '/api/admin/default-file' && req.method === 'PUT') { const input = await body(req); if (typeof input.id !== 'string') throw new Error('Choose a default file.'); await library.setDefault(input.id); json(res, 200, { ok: true }); return; }
             if (url.pathname === '/api/admin/images' && req.method === 'POST') { json(res, 201, await uploadScreenshot(req)); return; }
             if (url.pathname === '/api/admin/songs' && req.method === 'POST') { const song = await localSong(await body(req)); json(res, 201, await library.save(song, 'settings-admin')); return; }

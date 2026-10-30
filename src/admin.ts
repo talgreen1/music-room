@@ -9,8 +9,28 @@ import { uploadLibraryPdf } from './file-upload';
 import { uploadGitHubFile, deleteGitHubFiles } from './github-storage';
 import type { Room } from './model';
 import { settingsCredential } from './settings-password.mjs';
+import { validateDiagnosticReport, type DiagnosticReport } from './diagnostic-report';
 
 export class SettingsService {
+  async diagnosticReports(code: string): Promise<Record<string, Record<string, DiagnosticReport>>> {
+    if (!/^\d{6}$/.test(code)) throw new Error('Enter a six-digit room code.');
+    if (localServerConfigured) return this.request(`diagnostics/${code}`);
+    const { db } = this.cloud();
+    const records: Record<string, Record<string, DiagnosticReport>> = (await get(ref(db, `syncDiagnostics/${code}`))).val() || {};
+    for (const [uid, sessions] of Object.entries(records)) {
+      for (const [id, report] of Object.entries(sessions)) {
+        if (report.expiresAt <= Date.now()) { await remove(ref(db, `syncDiagnostics/${code}/${uid}/${id}`)); delete sessions[id]; }
+        else sessions[id] = validateDiagnosticReport({ ...report, events: Object.values(report.events) });
+      }
+      if (!Object.keys(sessions).length) delete records[uid];
+    }
+    return records;
+  }
+  async deleteDiagnosticReports(code: string) {
+    if (!/^\d{6}$/.test(code)) throw new Error('Enter a six-digit room code.');
+    if (localServerConfigured) await this.request(`diagnostics/${code}`, 'DELETE');
+    else await remove(ref(this.cloud().db, `syncDiagnostics/${code}`));
+  }
   private cloud() {
     const env = import.meta.env;
     const app = getApps().find(app => app.name === 'settings') || initializeApp({ apiKey: env.VITE_FIREBASE_API_KEY, authDomain: env.VITE_FIREBASE_AUTH_DOMAIN, databaseURL: env.VITE_FIREBASE_DATABASE_URL, projectId: env.VITE_FIREBASE_PROJECT_ID }, 'settings');

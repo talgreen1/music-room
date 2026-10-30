@@ -7,6 +7,8 @@ import { RoomService, cloudConfigured, localServerConfigured, songbook, type Con
 import { validCode, type Room } from './model';
 import { SongbookViewer } from './viewer';
 import { PositionPublisher } from './sync';
+import { ControllerPinch } from './controller-pinch';
+import { recordSyncDiagnostic } from './sync-diagnostics';
 import { createViewerToolbar } from './viewer-toolbar';
 import { PdfScrollbar } from './scrollbar';
 import { createVerticalScrollbarToggle } from './vertical-scrollbar';
@@ -135,6 +137,21 @@ async function openRoom(code: string) {
     updateFollow();
   }, () => { if (ready && room && token === generation) viewer?.follow(room.position, true, true); });
   followerSync = sync;
+  const pinch = new ControllerPinch();
+  viewer.onPinchStart = () => { if (ready && controlsRoom) pinch.start(); };
+  viewer.onPinchEnd = () => {
+    const position = viewer?.position();
+    if (token === generation && ready && controlsRoom && connection === 'Connected' && position && publisher) {
+      pinch.finish({ ...position, sourceId: loadedSource }, value => publisher!.finish(value));
+    } else pinch.reset();
+  };
+  const interruptPinch = () => {
+    const blocked = pinch.blocked; pinch.reset(); viewer?.cancelGesture();
+    if (blocked && publisher) {
+      publisher.stop();
+      publisher = new PositionPublisher(position => service.publish(position), error => message(errorText(error)));
+    }
+  };
   const beginBrowsing = () => { if (token !== generation || !canInteractWithDocument(ready, controlsRoom, following)) return; if (controlsRoom) viewer?.cancelFollow(); else sync.begin(); };
   const endBrowsing = () => { if (token === generation && !controlsRoom && ready) sync.end(); };
   scrollbar.onScroll = () => viewer?.cancelFollow();
@@ -250,6 +267,7 @@ async function openRoom(code: string) {
   function unavailable(title: string, explanation: string) {
     if (token !== generation) return;
     ready = false; controlsRoom = false; viewer?.cancelFollow();
+    interruptPinch();
     sourceRevision++; loadingSource = ''; loadedSource = '';
     publisher?.stop(); publisher = undefined;
     scrollbarToggle?.update(false, false);
@@ -279,6 +297,7 @@ async function openRoom(code: string) {
     if ((next.position.sequence || 0) < lastSequence) return;
     const first = !room; const previous = room?.position; room = next; const wasControl = controlsRoom; owner = service.isMaster(next); controlsRoom = service.canControl();
     if (wasControl !== controlsRoom) {
+      interruptPinch();
       sync.reset(!controlsRoom); lastPublished = '';
       if (!controlsRoom) { publisher?.stop(); publisher = new PositionPublisher(position => service.publish(position), error => message(errorText(error))); }
     }
@@ -287,6 +306,7 @@ async function openRoom(code: string) {
     searchButton.hidden = !controlsRoom;
     const source = next.sheet?.id || 'pdf';
     if (first || (loadingSource ? source !== loadingSource : source !== loadedSource)) {
+      interruptPinch();
       const revision = ++sourceRevision; loadingSource = source; ready = false; lastPublished = '';
       publisher?.stop(); publisher = undefined; updateFollow();
       recovery.hidden = true; pdfFrame.hidden = false; $('.toolbar').hidden = false;
@@ -300,7 +320,11 @@ async function openRoom(code: string) {
         viewer!.follow(room!.position, true, true); updateFollow();
       } catch (error) { if (token !== generation || revision !== sourceRevision) return; unavailable('Could not open the songbook', `${errorText(error)} Try again, or return home to join another room.`); }
     } else if (ready && (wasControl !== controlsRoom || service.shouldFollow(next.position, following)) && ((next.position.sequence || 0) > lastSequence || wasControl !== controlsRoom)) {
-      viewer!.follow(next.position, controlsRoom || Boolean(previous && Math.abs(previous.page - next.position.page) > 1), true);
+      // Atomic source/destination switches omit writerId; honor those and legacy
+      // positions immediately rather than treating them as ordinary scroll echoes.
+      if (!next.position.writerId) interruptPinch();
+      if (controlsRoom && pinch.blocked && wasControl === controlsRoom) recordSyncDiagnostic({ event: 'remote-deferred', page: next.position.page, zoom: next.position.zoom, sequence: next.position.sequence });
+      else viewer!.follow(next.position, wasControl !== controlsRoom || controlsRoom || Boolean(previous && Math.abs(previous.page - next.position.page) > 1), true);
     }
     lastSequence = Math.max(lastSequence, next.position.sequence || 0);
   }
@@ -310,6 +334,7 @@ async function openRoom(code: string) {
     updateFollow();
     $('#connection').textContent = value; $('#connection').classList.toggle('online', value === 'Connected');
     if (reconnected && ready) {
+      interruptPinch();
       if ((controlsRoom || following) && room) viewer?.follow(room.position, true, true);
     }
   }

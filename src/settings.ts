@@ -5,6 +5,7 @@ import { showSongPreview } from './song-dialog';
 import { isPdfFile, type SharedFile } from './sheets';
 import { roomUploads } from './song-library';
 import { showRoomDeleteDialog } from './room-delete-dialog';
+import { showDiagnosticReports } from './diagnostic-dialog';
 
 export function showSettings(app: HTMLElement, back: () => void) {
   const service = new SettingsService();
@@ -26,6 +27,9 @@ export function showSettings(app: HTMLElement, back: () => void) {
   $('#settings-back').onclick = leave;
   const lock = async () => { closePreview?.(); await service.logout(); if (!alive) return; $('#settings-login').hidden = false; $('#settings-content').hidden = true; $('#settings-logout').hidden = true; $('#settings-rooms').replaceChildren(); $('#settings-songs').replaceChildren(); };
   $('#settings-logout').onclick = () => void lock().catch(fail);
+  const debug = document.createElement('button'); debug.className = 'secondary'; debug.textContent = 'Sync debug reports';
+  $('#settings-content').prepend(debug);
+  debug.onclick = () => { closePreview?.(); closePreview = showDiagnosticReports(service); };
   async function refresh() {
     const [rooms, songs] = await Promise.all([service.rooms(), service.songs()]); if (!alive) return;
     const list = $('#settings-rooms'); list.replaceChildren();

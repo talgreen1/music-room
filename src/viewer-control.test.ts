@@ -14,6 +14,25 @@ function fixture() {
 }
 afterEach(() => vi.unstubAllGlobals());
 describe('shared controller view updates', () => {
+  it('keeps a fixed pinch anchor despite intermediate scroll clamping during layout', () => {
+    const viewer = fixture(), state = viewer as any;
+    const page = { offsetTop: 0, offsetLeft: 0, get offsetWidth() { return 1000 * state.zoom; }, get offsetHeight() { return 1000 * state.zoom; } };
+    state.pages = [page]; state.pinching = true; state.host.scrollTop = 400; state.host.scrollLeft = 200;
+    state.geometry = () => ({ tops: [0], heights: [page.offsetHeight] });
+    state.layout = () => { state.host.scrollHeight = page.offsetHeight; state.host.scrollWidth = page.offsetWidth; };
+    state.pinchDiagnostics = { sample: vi.fn() };
+    state.zoomAt(2, { x: 100, y: 100 }, { x: 100, y: 100 });
+    expect(state.host.scrollTop).toBe(900); expect(state.host.scrollLeft).toBe(500);
+    const snapshot = state.pinchDiagnostics.sample.mock.calls[0][0];
+    expect(snapshot().geometry).toMatchObject({ anchorPage: 1, anchorOffset: .5, beforeTop: 400, targetTop: 900, actualTop: 900, targetLeft: 500 });
+    state.host.scrollTop = 1700;
+    expect(snapshot().geometry).toMatchObject({ targetTop: 900, actualTop: 1700 });
+    // Simulate stale/clamped scroll pixels seen between iOS layout/event turns.
+    state.host.scrollTop = 0; state.host.scrollLeft = 0;
+    state.zoomAt(3, { x: 100, y: 100 }, { x: 120, y: 150 });
+    expect(state.host.scrollTop).toBe(1350); expect(state.host.scrollLeft).toBe(780);
+    expect(viewer.onPosition).toHaveBeenLastCalledWith(expect.objectContaining({ zoom: 3, offset: .45 }), false);
+  });
   it('applies zoom-out and its page/axis coordinates together without crossing unrelated pages', () => {
     const viewer = fixture(), state = viewer as any;
     const raf = vi.fn(); vi.stubGlobal('requestAnimationFrame', raf);

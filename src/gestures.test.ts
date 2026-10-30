@@ -14,7 +14,7 @@ function setup() {
     releasePointerCapture: (id: number) => capture.delete(id),
     classList: { add: (name: string) => classes.add(name), remove: (name: string) => classes.delete(name) }
   }) as unknown as HTMLElement;
-  const callbacks = { locked: vi.fn(() => false), pan: vi.fn(), zoom: vi.fn(), start: vi.fn(), end: vi.fn() };
+  const callbacks = { locked: vi.fn(() => false), pan: vi.fn(), zoom: vi.fn(), start: vi.fn(), end: vi.fn(), pinchStart: vi.fn(), pinchEnd: vi.fn() };
   const gestures = new PdfGestures(host, callbacks);
   const pointer = (type: string, id: number, x: number, y: number, button = 0) => {
     const event = Object.assign(new Event(type, { cancelable: true }), { pointerId: id, pointerType: 'touch', button, clientX: x + 10, clientY: y + 20 });
@@ -64,13 +64,15 @@ describe('PDF gestures', () => {
   it('pinches around the moving midpoint and resumes one-finger drag without jumping', () => {
     const t = setup();
     t.pointer('pointerdown', 1, 100, 100); t.pointer('pointerdown', 2, 200, 100);
+    expect(t.callbacks.pinchStart).toHaveBeenCalledOnce();
     t.pointer('pointermove', 2, 300, 100);
     expect(t.callbacks.zoom).toHaveBeenCalledWith(2, { x: 150, y: 100 }, { x: 200, y: 100 });
     expect(t.callbacks.pan).not.toHaveBeenCalled();
     t.pointer('pointercancel', 2, 300, 100);
+    expect(t.callbacks.pinchEnd).not.toHaveBeenCalled();
     t.pointer('pointermove', 1, 90, 80);
     expect(t.callbacks.pan).toHaveBeenCalledWith(10, 20);
-    t.gestures.destroy(); expect(t.capture.size).toBe(0);
+    t.gestures.destroy(); expect(t.capture.size).toBe(0); expect(t.callbacks.pinchEnd).toHaveBeenCalledOnce();
   });
   it('keeps Followers locked and prevents document/browser zoom on Ctrl+wheel', () => {
     const t = setup(); t.callbacks.locked.mockReturnValue(true);
