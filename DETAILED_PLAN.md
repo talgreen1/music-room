@@ -509,7 +509,7 @@ Do not treat a successful build or local BroadcastChannel demo as proof of cross
 - [x] **RL-003 — Bounded waiting and cleanup.** Bound anonymous sign-in and server-clock reads, remove the clock listener on every outcome, detect stalled room/document loads, cancel failed PDF work and permit retry. Preserve a readable loaded document during reconnect timeout.
 - [ ] **RL-004 — Physical-device acceptance.** Verify newly created room links, slow/unknown-size downloads, offline/retry, real clipboard paste and two-device permissions using TESTING.md. The intermittent original failure has not been reproduced or assigned a confirmed root cause; phase-specific reports are needed for diagnosis.
 
-Implementation is on `feat/room-loading-progress-errors` and has not been committed, pushed or deployed. The existing production release remains unchanged. No backend/storage permissions or schema changes are required.
+Release evidence (2026-11-08): implementation commit `a28f4cd` was pushed on `feat/room-loading-progress-errors` and deployed to Hosting. Type checking, 217 tests, seven isolated integration checks and ordinary/deployment builds passed; live JS/CSS matched deployment output and contained the progress/error markers. No backend/storage permissions or schema changes were required or deployed. Physical-device acceptance remains RL-004.
 
 ## Smooth scrolling with multiple controllers
 
