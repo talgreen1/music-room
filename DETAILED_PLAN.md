@@ -502,6 +502,15 @@ Do not treat a successful build or local BroadcastChannel demo as proof of cross
 - [x] Add gesture regressions and update README, architecture and acceptance procedures.
 - [ ] Verify real phone/desktop locked-following and opt-out/recheck behavior.
 
+## Room loading progress and copyable errors
+
+- [x] **RL-001 — Loading visibility.** Add separate indeterminate room connection and measured PDF byte/page preparation progress, distinguish first connection from reconnection, and guard source/navigation callbacks.
+- [x] **RL-002 — Detailed failures.** Preserve Firebase codes, HTTP status and nested causes; show bounded, redacted local error reports with copy/manual fallback in room and viewer failures. Keep copy/expand/selection outside PDF gestures.
+- [x] **RL-003 — Bounded waiting and cleanup.** Bound anonymous sign-in and server-clock reads, remove the clock listener on every outcome, detect stalled room/document loads, cancel failed PDF work and permit retry. Preserve a readable loaded document during reconnect timeout.
+- [ ] **RL-004 — Physical-device acceptance.** Verify newly created room links, slow/unknown-size downloads, offline/retry, real clipboard paste and two-device permissions using TESTING.md. The intermittent original failure has not been reproduced or assigned a confirmed root cause; phase-specific reports are needed for diagnosis.
+
+Release evidence (2026-11-08): implementation commit `a28f4cd` was pushed on `feat/room-loading-progress-errors` and deployed to Hosting. Type checking, 217 tests, seven isolated integration checks and ordinary/deployment builds passed; live JS/CSS matched deployment output and contained the progress/error markers. No backend/storage permissions or schema changes were required or deployed. Physical-device acceptance remains RL-004.
+
 ## Smooth scrolling with multiple controllers
 
 Release acceptance (2026-10-30): the user accepted the deployed version and requested PR creation, merge to main and feature-branch deletion. The accepted source includes controller pinch protection, opt-in server diagnostics, frame-coalesced rendering and bounded nearby previews. Detailed iPhone/browser/network/memory procedures remain outstanding; user acceptance does not imply that every procedure below was run.

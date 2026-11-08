@@ -20,7 +20,7 @@ export class PdfGestures {
     const options = { signal: this.events.signal };
     host.addEventListener('pointerdown', event => {
       const target = event.target as HTMLElement;
-      if (typeof target.closest === 'function' && target.closest('button, input')) return;
+      if (typeof target.closest === 'function' && target.closest('button, input, .error-details, .page-render-error')) return;
       if (callbacks.locked() || (event.pointerType === 'mouse' && event.button !== 0)) return;
       if (!this.pointers.size) this.suppressLinkClick = false;
       this.pointers.set(event.pointerId, this.point(event));
