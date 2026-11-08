@@ -38,6 +38,12 @@ Same-origin hosting is the default. An external host must permit browser access 
 
 ## 4. Architecture
 
+Room entry progress is separate from the backend's connected flag. `room-loading.ts` owns two compact progress rows and inactivity deadlines; initial connection is indeterminate, PDF byte percentages come from PDF.js, and PDF page preparation uses completed/total pages. `main.ts` completes connection progress only after both connection and room data arrive, and guards document callbacks by room generation/source revision. Reconnect progress does not interrupt an already-open viewer on timeout. Failed initial loading uses the recovery view and cancels the obsolete PDF task; retries create a fresh attempt. Image sheets retain lazy tile loading.
+
+`operation-timeout.ts` bounds authentication and server-clock waiting. `RoomService.init` accepts optional phase and abort callbacks, releases its one-shot clock subscription on success/error/timeout/navigation, and never accepts a late timed-out result as completed initialization. Room callbacks retain original Firebase errors and local HTTP status instead of reducing them to message strings. Unsubscribed room snapshots are ignored. `viewer.ts` forwards byte/preparation progress through an optional per-load callback while rejecting obsolete source events.
+
+`error-details.ts` builds safe, copyable local reports with operation context, browser/network state, error code/status/stack/cause and a timestamp. It redacts URL credentials/query/fragment values and named credential fields, avoids serializing arbitrary error objects and caps text at 12,000 characters. `clipboard.ts` shares mobile copy/fallback behavior between room links and error reports. Main room failures and viewer page/link errors use this component; PDF gestures exclude the error panel so its controls/selection stay usable. These details are not sent automatically to diagnostic storage. No room authorization or backend/storage schema is changed.
+
 ```mermaid
 flowchart LR
     M[Master phone: browser + PDF.js] -->|Small position writes| R[Firebase Realtime Database]

@@ -9,13 +9,14 @@ import { uploadGitHubFile } from './github-storage';
 import { recordSyncDiagnostic, diagnosticUploadsEnabled } from './sync-diagnostics';
 import { startDiagnosticUpload } from './diagnostic-upload';
 import { validateSongbook } from './songbook';
+import { withDeadline } from './operation-timeout';
 const env = import.meta.env;
 let emulatorsConnected = false;
 export const useEmulators = env.VITE_USE_FIREBASE_EMULATORS === 'true';
 export const cloudConfigured = useEmulators || Boolean(env.VITE_FIREBASE_API_KEY && env.VITE_FIREBASE_DATABASE_URL && env.VITE_FIREBASE_PROJECT_ID && env.VITE_FIREBASE_AUTH_DOMAIN);
 export const localServerConfigured = env.DEV && !cloudConfigured;
 export const songbook = { pdfUrl: env.VITE_PDF_URL || '/songbooks/songbook-2026-10.pdf', pdfVersion: env.VITE_PDF_VERSION || '2026-10', pdfTitle: env.VITE_PDF_TITLE || 'חוברת שירים' };
-export type Connection = 'Connected' | 'Reconnecting…' | 'Offline';
+export type Connection = 'Connecting…' | 'Connected' | 'Reconnecting…' | 'Offline';
 export class RoomService {
   private readonly writerId = Array.from(crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, '0')).join('');
   private db?: Database;
@@ -36,7 +37,8 @@ export class RoomService {
   private onRoom?: (room: Room | null) => void;
   private diagnosticCleanup?: () => void;
   private diagnosticRoomCreatedAt = 0;
-  async init() {
+  async init(onPhase?: (phase: 'authentication' | 'clock') => void, signal?: AbortSignal) {
+    if (signal?.aborted) throw new DOMException('Operation cancelled.', 'AbortError');
     if (this.initialized) return;
     if (!useEmulators && !cloudConfigured && [env.VITE_FIREBASE_API_KEY, env.VITE_FIREBASE_AUTH_DOMAIN, env.VITE_FIREBASE_DATABASE_URL, env.VITE_FIREBASE_PROJECT_ID].some(Boolean)) {
       throw new Error('Firebase settings are incomplete. Fill all four Firebase values in .env.local, or clear them to use the local demo.');
@@ -51,11 +53,16 @@ export class RoomService {
         connectDatabaseEmulator(this.db, host, 9000);
         emulatorsConnected = true;
       }
-      const credential = await signInAnonymously(auth);
+      onPhase?.('authentication');
+      const credential = await withDeadline(signInAnonymously(auth), 30000, 'room/authentication-timeout', signal);
       this.uid = credential.user.uid;
-      this.serverOffset = await new Promise<number>((resolve, reject) => {
-        onValue(ref(this.db!, '.info/serverTimeOffset'), snapshot => resolve(snapshot.val() || 0), reject, { onlyOnce: true });
-      });
+      onPhase?.('clock');
+      let unsubscribe: (() => void) | undefined;
+      try {
+        this.serverOffset = await withDeadline(new Promise<number>((resolve, reject) => {
+          unsubscribe = onValue(ref(this.db!, '.info/serverTimeOffset'), snapshot => resolve(snapshot.val() || 0), reject, { onlyOnce: true });
+        }), 15000, 'room/server-clock-timeout', signal);
+      } finally { unsubscribe?.(); }
     } else {
       this.uid = sessionStorage.getItem('music-device') || Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
       sessionStorage.setItem('music-device', this.uid);
@@ -103,11 +110,13 @@ export class RoomService {
     }
     throw new Error('Could not reserve a room. Please try again.');
   }
-  watch(code: string, onRoom: (room: Room | null) => void, onConnection: (status: Connection) => void, onError: (message: string) => void) {
+  watch(code: string, onRoom: (room: Room | null) => void, onConnection: (status: Connection) => void, onError: (error: unknown) => void) {
     this.leave(); this.code = code; this.onRoom = onRoom;
+    let watching = true; this.cleanups.push(() => { watching = false; });
     this.uploadToken = sessionStorage.getItem(`music-master-token:${code}`) || '';
     let expiresAt = Infinity;
     const accept = (room: Room | null) => {
+      if (!watching) return;
       this.sourceId = room?.sheet?.id || 'pdf';
       expiresAt = room?.expiresAt || Infinity;
       this.sequence = Math.max(this.sequence, room?.position.sequence || 0);
@@ -140,7 +149,7 @@ export class RoomService {
     }, 10000);
     this.cleanups.push(() => clearInterval(expiry));
     if (this.db) {
-      this.cleanups.push(onValue(ref(this.db, `rooms/${code}`), snapshot => accept(snapshot.val()), error => onError(error.message)));
+      this.cleanups.push(onValue(ref(this.db, `rooms/${code}`), snapshot => accept(snapshot.val()), error => { if (watching) onError(error); }));
       this.cleanups.push(onValue(ref(this.db, '.info/connected'), snapshot => { this.connected = Boolean(snapshot.val()); onConnection(this.connected ? 'Connected' : navigator.onLine ? 'Reconnecting…' : 'Offline'); }));
     } else if (localServerConfigured) {
       const controller = new AbortController();
@@ -156,11 +165,11 @@ export class RoomService {
           const response = await fetch(`/api/local-rooms/${code}`, { signal: controller.signal });
           if (!live) return;
           if (response.status === 404) { onRoom(null); return; }
-          if (!response.ok) throw new Error('Could not connect to the local room server.');
+          if (!response.ok) throw Object.assign(new Error('Could not connect to the local room server.'), { status: response.status, code: 'room/read-failed' });
           const payload = await response.json();
           if (payload.room?.masterId !== this.uid || !this.uploadToken) {
             const joined = await fetch(`/api/local-rooms/${code}/members`, { method: 'POST', signal: controller.signal });
-            if (!joined.ok) throw new Error('Could not join the room.');
+            if (!joined.ok) throw Object.assign(new Error('Could not join the room.'), { status: joined.status, code: 'room/join-failed' });
             const member = await joined.json(); if (!live) return;
             this.uploadToken = member.token;
             this.memberId = member.memberId;
@@ -169,7 +178,7 @@ export class RoomService {
           if (!live) return;
           events = new EventSource(`/api/local-rooms/${code}/events`);
           events.onopen = () => { if (live) { this.connected = true; onConnection('Connected'); } };
-          events.onmessage = event => { if (live) handle(JSON.parse(event.data)); };
+          events.onmessage = event => { if (live) { try { handle(JSON.parse(event.data)); } catch (error) { onError(new Error('Invalid room update from the local server.', { cause: error })); } } };
           events.onerror = () => {
             if (!live) return;
             this.connected = false; onConnection(navigator.onLine ? 'Reconnecting…' : 'Offline');
@@ -178,7 +187,7 @@ export class RoomService {
               if (live && response.status === 404) { events?.close(); accept(null); }
             }).catch(() => {});
           };
-        } catch (error) { if (live) onError(error instanceof Error ? error.message : 'Could not connect to the local room server.'); }
+        } catch (error) { if (live) onError(error); }
       })();
     } else {
       this.channel = new BroadcastChannel(`music-room:${code}`);
@@ -223,7 +232,7 @@ export class RoomService {
     }, { applyLocally: false }); } catch (error) {
       const contention = /maxretry/i.test(String(error));
       recordSyncDiagnostic({ event: 'position-write-failed', page: value.page, zoom: value.zoom, sequence: value.sequence, reason: contention ? 'maxretry' : 'write-failed' });
-      if (contention) throw new Error('Shared position could not be saved because updates kept competing. Try the gesture again.');
+      if (contention) throw Object.assign(new Error('Shared position could not be saved because updates kept competing. Try the gesture again.', { cause: error }), { code: 'room/position-contention' });
       throw error;
     }
     else if (localServerConfigured) {

@@ -24,6 +24,12 @@ function setup() {
 }
 
 describe('PDF gestures', () => {
+  it('leaves error details selectable and their copy/expand controls usable', () => {
+    const t = setup(); Object.assign(t.target, { closest: (selector: string) => selector.includes('.error-details') ? {} : null });
+    const down = t.pointer('pointerdown', 1, 100, 100); t.pointer('pointermove', 1, 80, 80); t.pointer('pointerup', 1, 80, 80);
+    expect(down.defaultPrevented).toBe(false); expect(t.callbacks.start).not.toHaveBeenCalled(); expect(t.callbacks.pan).not.toHaveBeenCalled(); expect(t.capture.size).toBe(0);
+    t.gestures.destroy();
+  });
   it('locks synced Followers until explicit opt-out, and locks again when sync is checked', () => {
     const t = setup(); let following = true;
     t.callbacks.locked.mockImplementation(() => !canInteractWithDocument(true, false, following));

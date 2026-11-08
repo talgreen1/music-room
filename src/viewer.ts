@@ -9,6 +9,8 @@ import { validateSheet, type ImageSheet } from './sheets';
 import { PinchDiagnostics } from './pinch-diagnostics';
 import { ViewerGestureFrames } from './viewer-gesture-frames';
 import { PdfPreviews } from './pdf-previews';
+import type { DocumentProgress } from './room-loading';
+import { createErrorDetails, redactErrorText } from './error-details';
 GlobalWorkerOptions.workerSrc = worker;
 export class SongbookViewer {
   private pdf?: PDFDocumentProxy;
@@ -38,7 +40,7 @@ export class SongbookViewer {
   private resizeObserver: ResizeObserver;
   onPosition?: (position: Position, remote?: boolean) => void;
   onPage?: (page: number) => void;
-  onLinkError?: (message: string) => void;
+  onLinkError?: (error: unknown) => void;
   onInteractionStart?: () => void;
   onInteractionEnd?: () => void;
   onPinchStart?: () => void;
@@ -95,6 +97,7 @@ export class SongbookViewer {
     void this.loading?.destroy(); this.loading = undefined;
     this.zoom = 1; this.host.classList.remove('image-sheet'); this.host.innerHTML = '';
   }
+  cancelLoad() { this.resetSource(); }
   async loadSheet(value: ImageSheet) {
     this.resetSource(); this.sheet = validateSheet(value); this.host.classList.add('image-sheet');
     this.sheet.segments.forEach((segment, index) => {
@@ -104,14 +107,16 @@ export class SongbookViewer {
     });
     this.layout(); this.observePages();
   }
-  async load(url: string) {
+  async load(url: string, progress?: (value: DocumentProgress) => void) {
     this.resetSource();
     const revision = this.sourceRevision;
     this.host.innerHTML = '<div class="viewer-message">Opening your songbook…</div>';
-    this.loading = getDocument({ url });
-    const pdf = await this.loading.promise;
+    const loading = getDocument({ url }); this.loading = loading;
+    loading.onProgress = (value: { loaded: number; total?: number }) => { if (!this.destroyed && revision === this.sourceRevision) progress?.({ stage: 'download', loaded: value.loaded, total: value.total }); };
+    const pdf = await loading.promise;
     if (this.destroyed || revision !== this.sourceRevision) return;
     this.pdf = pdf;
+    progress?.({ stage: 'prepare', loaded: 0, total: pdf.numPages });
     this.host.innerHTML = ''; this.pages = []; this.ratios = [];
     for (let n = 1; n <= this.pdf.numPages; n++) {
       const page = await pdf.getPage(n); const viewport = page.getViewport({ scale: 1 });
@@ -120,6 +125,7 @@ export class SongbookViewer {
       element.setAttribute('aria-label', `Songbook page ${n}`);
       element.innerHTML = `<span class="page-placeholder">${n}</span>`;
       this.ratios.push(viewport.height / viewport.width); this.pages.push(element); this.host.append(element);
+      progress?.({ stage: 'prepare', loaded: n, total: pdf.numPages });
     }
     this.previews = new PdfPreviews(pdf, () => { if (!this.destroyed && revision === this.sourceRevision) this.showPreviews(); });
     this.layout();
@@ -177,7 +183,13 @@ export class SongbookViewer {
       if (element.querySelector('img')) return;
       const image = document.createElement('img'); image.alt = ''; image.draggable = false; image.decoding = 'async';
       image.src = this.sheet.segments[index].url;
-      image.onerror = () => { image.remove(); if (!this.destroyed && this.visible.has(index)) { element.textContent = 'Image unavailable. Tap to retry.'; element.onclick = () => { element.textContent = ''; void this.render(index); }; } };
+      image.onerror = () => {
+        image.remove(); if (this.destroyed || !this.visible.has(index)) return;
+        const notice = document.createElement('div'); notice.className = 'page-render-error';
+        notice.append(createErrorDetails(new Error('Image tile could not be downloaded or decoded.'), { stage: 'image download', page: index + 1 }));
+        const retry = document.createElement('button'); retry.className = 'secondary'; retry.textContent = 'Retry page'; retry.onclick = () => { notice.remove(); void this.render(index); };
+        notice.append(retry); element.append(notice);
+      };
       element.append(image); return;
     }
     // Link regions use percentage coordinates, so they survive canvas refreshes
@@ -211,10 +223,10 @@ export class SongbookViewer {
       element.querySelector('.page-render-error')?.remove();
       const notice = document.createElement('div'); notice.className = 'page-render-error'; notice.setAttribute('role', 'alert');
       const text = document.createElement('p');
-      text.textContent = `Could not display page ${index + 1}: ${error instanceof Error ? error.message : String(error)}`;
+      text.textContent = redactErrorText(`Could not display page ${index + 1}: ${error instanceof Error ? error.message : String(error)}`);
       const retry = document.createElement('button'); retry.className = 'secondary'; retry.textContent = 'Retry page';
       retry.onclick = () => { notice.remove(); void this.render(index); };
-      notice.append(text, retry); element.append(notice);
+      notice.append(text, createErrorDetails(error, { stage: 'PDF page rendering', page: index + 1 }), retry); element.append(notice);
     } finally {
       if (task && this.tasks.get(index) === task) this.tasks.delete(index);
       this.previews?.setPaused(this.pinching || this.interacting || this.tasks.size > 0);
@@ -248,7 +260,7 @@ export class SongbookViewer {
             if (this.host.classList.contains('locked') || this.destroyed) return;
             this.cancelFollow();
             this.follow({ ...destination, zoom: this.zoom, horizontal: this.rtl ? 1 : 0 }, true);
-          } catch (error) { if (!this.destroyed) this.onLinkError?.(error instanceof Error ? error.message : 'Could not open this PDF link.'); }
+          } catch (error) { if (!this.destroyed) this.onLinkError?.(error); }
           finally { this.onInteractionEnd?.(); }
         };
         layer.append(link);
