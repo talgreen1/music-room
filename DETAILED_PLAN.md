@@ -504,6 +504,10 @@ Do not treat a successful build or local BroadcastChannel demo as proof of cross
 
 ## Room loading progress and copyable errors
 
+- [x] **RL-005 — Protect early startup.** Add a lightweight bootstrap, independent fallback UI and full room-setup boundary. Catch module evaluation, constructor/runtime and recovery-presentation errors without depending on partially initialized controls; make cleanup resilient and retries usable.
+- [x] **RL-006 — Capture local startup diagnostics.** Record bounded stages/elapsed time before Firebase and include them in Copy error without storage/authentication/debug-flag dependencies. Keep existing server-report permissions unchanged and discard obsolete attempts.
+- [ ] **RL-007 — Device startup acceptance.** Verify compatibility/module failure recovery, actual pasted reports and restored room permissions on iPhone/Android. Room 761483's original failing phone/iOS version and exact cause remain unknown. This fix is local on `fix/early-room-startup-errors` and is not committed or deployed.
+
 - [x] **RL-001 — Loading visibility.** Add separate indeterminate room connection and measured PDF byte/page preparation progress, distinguish first connection from reconnection, and guard source/navigation callbacks.
 - [x] **RL-002 — Detailed failures.** Preserve Firebase codes, HTTP status and nested causes; show bounded, redacted local error reports with copy/manual fallback in room and viewer failures. Keep copy/expand/selection outside PDF gestures.
 - [x] **RL-003 — Bounded waiting and cleanup.** Bound anonymous sign-in and server-clock reads, remove the clock listener on every outcome, detect stalled room/document loads, cancel failed PDF work and permit retry. Preserve a readable loaded document during reconnect timeout.
