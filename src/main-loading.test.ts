@@ -2,11 +2,11 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import type { Room } from './model';
 const h = vi.hoisted(() => ({
-  receive: undefined as any, status: undefined as any, error: undefined as any, load: vi.fn(), init: vi.fn(), create: vi.fn(), copy: vi.fn(), cancelLoad: vi.fn()
+  receive: undefined as any, status: undefined as any, error: undefined as any, recovery: undefined as any, load: vi.fn(), init: vi.fn(), create: vi.fn(), copy: vi.fn(), cancelLoad: vi.fn()
 }));
 vi.mock('./rooms', () => ({ cloudConfigured: true, localServerConfigured: false, songbook: { pdfTitle: 'Book', pdfVersion: '1' }, RoomService: class {
   init = h.init; create = h.create; leave() {} roomCode() { return '123456'; }
-  watch(_code: string, receive: unknown, status: any, error: unknown) { h.receive = receive; h.status = status; h.error = error; status('Connected'); }
+  watch(_code: string, receive: unknown, status: any, error: unknown, recovery: unknown) { h.receive = receive; h.status = status; h.error = error; h.recovery = recovery; status('Connected'); }
   isMaster() { return false; } canControl() { return false; } participantId() { return 'follower'; } shouldFollow() { return true; }
 } }));
 vi.mock('./clipboard', () => ({ copyRoomUrl: vi.fn(), copyText: h.copy }));
@@ -27,6 +27,17 @@ it('shows connection/download progress, copyable failures and retry, and rejects
   expect(document.querySelector('.copy-error')).not.toBeNull();
   (document.querySelector('.copy-error') as HTMLButtonElement).click(); await flush(); expect(h.copy.mock.calls[0][0]).toContain('Room: 123456');
   (document.querySelector('#retry-room') as HTMLButtonElement).click(); await flush();
+  h.recovery('authentication refresh'); h.status('Connected');
+  expect(document.querySelector('.room-loading')!.textContent).toContain('Refreshing room access');
+  h.recovery('room subscription retry');
+  expect(document.querySelector('.room-loading')!.textContent).toContain('Retrying room connection');
+  h.error(Object.assign(new Error('denied again'), { code: 'PERMISSION_DENIED' }));
+  expect(document.querySelector('.room-recovery')!.textContent).toContain('room subscription retry');
+  (document.querySelector('.copy-error') as HTMLButtonElement).click(); await flush();
+  expect(h.copy.mock.lastCall![0]).toContain('PERMISSION_DENIED');
+  expect(h.copy.mock.lastCall![0]).toContain('authentication refresh');
+  (document.querySelector('#retry-room') as HTMLButtonElement).click(); await flush();
+  h.recovery('room subscription retry');
   let reject!: (error: Error) => void;
   h.load.mockImplementationOnce(() => new Promise<void>((_yes, no) => { reject = no; }));
   const room: Room = { masterId: 'master', createdAt: Date.now(), expiresAt: Date.now() + 86400000, pdfUrl: '/book.pdf', pdfVersion: '1', pdfTitle: 'Book', position: { page: 1, offset: 0, zoom: 1, sequence: 1 } };
@@ -35,7 +46,7 @@ it('shows connection/download progress, copyable failures and retry, and rejects
   h.status('Offline'); expect(document.querySelector('.room-loading')!.textContent).toContain('Offline'); expect(pdfBar.value).toBe(.5);
   h.status('Connected'); reject(Object.assign(new Error('PDF forbidden'), { name: 'UnexpectedResponseException', status: 403 })); await flush();
   const failure = document.querySelector('.room-recovery')!;
-  expect(h.cancelLoad).toHaveBeenCalledTimes(2);
+  expect(h.cancelLoad).toHaveBeenCalledTimes(3);
   expect(failure.textContent).toContain('UnexpectedResponseException'); expect(failure.textContent).toContain('HTTP status: 403'); expect(failure.textContent).toContain('document loading');
   h.load.mockResolvedValue(undefined); (document.querySelector('#retry-room') as HTMLButtonElement).click(); await flush(); h.receive(room); await flush();
   expect((document.querySelector('.room-loading') as HTMLElement).hidden).toBe(true);

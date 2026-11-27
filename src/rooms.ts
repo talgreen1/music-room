@@ -1,5 +1,5 @@
 import { initializeApp, getApps } from 'firebase/app';
-import { getAuth, signInAnonymously, connectAuthEmulator } from 'firebase/auth';
+import { getAuth, connectAuthEmulator, type Auth } from 'firebase/auth';
 import { getDatabase, ref, get, onValue, runTransaction, set, update, serverTimestamp, connectDatabaseEmulator, type Database } from 'firebase/database';
 import { availableSongs, type SavedSong } from './song-library';
 import { validateFile, type SharedFile } from './sheets';
@@ -10,6 +10,8 @@ import { recordSyncDiagnostic, diagnosticUploadsEnabled } from './sync-diagnosti
 import { startDiagnosticUpload } from './diagnostic-upload';
 import { validateSongbook } from './songbook';
 import { withDeadline } from './operation-timeout';
+import { ensureRoomIdentity, refreshRoomIdentity, type RoomInitPhase } from './room-auth';
+import { subscribeRoomWithRecovery, type RoomRecoveryPhase } from './room-subscription';
 const env = import.meta.env;
 let emulatorsConnected = false;
 export const useEmulators = env.VITE_USE_FIREBASE_EMULATORS === 'true';
@@ -20,6 +22,7 @@ export type Connection = 'Connecting…' | 'Connected' | 'Reconnecting…' | 'Of
 export class RoomService {
   private readonly writerId = Array.from(crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2, '0')).join('');
   private db?: Database;
+  private auth?: Auth;
   private uid = '';
   private channel?: BroadcastChannel;
   private cleanups: (() => void)[] = [];
@@ -37,25 +40,23 @@ export class RoomService {
   private onRoom?: (room: Room | null) => void;
   private diagnosticCleanup?: () => void;
   private diagnosticRoomCreatedAt = 0;
-  async init(onPhase?: (phase: 'authentication' | 'clock') => void, signal?: AbortSignal) {
+  async init(onPhase?: (phase: RoomInitPhase) => void, signal?: AbortSignal) {
     if (signal?.aborted) throw new DOMException('Operation cancelled.', 'AbortError');
-    if (this.initialized) return;
+    if (this.initialized && !this.db) return;
     if (!useEmulators && !cloudConfigured && [env.VITE_FIREBASE_API_KEY, env.VITE_FIREBASE_AUTH_DOMAIN, env.VITE_FIREBASE_DATABASE_URL, env.VITE_FIREBASE_PROJECT_ID].some(Boolean)) {
       throw new Error('Firebase settings are incomplete. Fill all four Firebase values in .env.local, or clear them to use the local demo.');
     }
     if (cloudConfigured) {
       const app = getApps().find(app => app.name === '[DEFAULT]') || initializeApp({ apiKey: env.VITE_FIREBASE_API_KEY || 'demo-key', authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || 'demo-music-room.firebaseapp.com', databaseURL: env.VITE_FIREBASE_DATABASE_URL || 'https://demo-music-room-default-rtdb.firebaseio.com', projectId: env.VITE_FIREBASE_PROJECT_ID || 'demo-music-room' });
+      const auth = getAuth(app); this.auth = auth;
       this.db = getDatabase(app);
-      const auth = getAuth(app);
       if (useEmulators && !emulatorsConnected) {
         const host = env.VITE_FIREBASE_EMULATOR_HOST || location.hostname;
         connectAuthEmulator(auth, `http://${host}:9099`, { disableWarnings: true });
         connectDatabaseEmulator(this.db, host, 9000);
         emulatorsConnected = true;
       }
-      onPhase?.('authentication');
-      const credential = await withDeadline(signInAnonymously(auth), 30000, 'room/authentication-timeout', signal);
-      this.uid = credential.user.uid;
+      this.uid = await ensureRoomIdentity(auth, this.uid, onPhase, signal);
       onPhase?.('clock');
       let unsubscribe: (() => void) | undefined;
       try {
@@ -110,7 +111,7 @@ export class RoomService {
     }
     throw new Error('Could not reserve a room. Please try again.');
   }
-  watch(code: string, onRoom: (room: Room | null) => void, onConnection: (status: Connection) => void, onError: (error: unknown) => void) {
+  watch(code: string, onRoom: (room: Room | null) => void, onConnection: (status: Connection) => void, onError: (error: unknown) => void, onRecovery?: (phase: RoomRecoveryPhase) => void) {
     this.leave(); this.code = code; this.onRoom = onRoom;
     let watching = true; this.cleanups.push(() => { watching = false; });
     this.uploadToken = sessionStorage.getItem(`music-master-token:${code}`) || '';
@@ -149,8 +150,21 @@ export class RoomService {
     }, 10000);
     this.cleanups.push(() => clearInterval(expiry));
     if (this.db) {
-      this.cleanups.push(onValue(ref(this.db, `rooms/${code}`), snapshot => accept(snapshot.val()), error => { if (watching) onError(error); }));
-      this.cleanups.push(onValue(ref(this.db, '.info/connected'), snapshot => { this.connected = Boolean(snapshot.val()); onConnection(this.connected ? 'Connected' : navigator.onLine ? 'Reconnecting…' : 'Offline'); }));
+      this.cleanups.push(subscribeRoomWithRecovery<Room | null>({
+        subscribe: (value, error) => onValue(ref(this.db!, `rooms/${code}`), snapshot => value(snapshot.val()), error),
+        refresh: signal => {
+          if (!this.auth) throw new Error('No authenticated musician session is available. Reload the app.');
+          return refreshRoomIdentity(this.auth, this.uid, signal);
+        },
+        value: accept, recovery: phase => { if (watching) onRecovery?.(phase); },
+        error: error => {
+          if (!watching) return;
+          this.master = false; this.controlling = false; this.activeRoom = false;
+          this.diagnosticCleanup?.(); this.diagnosticCleanup = undefined;
+          onError(error);
+        }
+      }));
+      this.cleanups.push(onValue(ref(this.db, '.info/connected'), snapshot => { if (watching) { this.connected = Boolean(snapshot.val()); onConnection(this.connected ? 'Connected' : navigator.onLine ? 'Reconnecting…' : 'Offline'); } }));
     } else if (localServerConfigured) {
       const controller = new AbortController();
       let events: EventSource | undefined;

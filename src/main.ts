@@ -4,6 +4,7 @@ import QRCode from 'qrcode';
 import { shareIcon, copyIcon, searchIcon } from './icons';
 import { copyRoomUrl } from './clipboard';
 import { RoomService, cloudConfigured, localServerConfigured, songbook, type Connection } from './rooms';
+import type { RoomRecoveryPhase } from './room-subscription';
 import { validCode, type Room } from './model';
 import { SongbookViewer } from './viewer';
 import { PositionPublisher } from './sync';
@@ -124,6 +125,7 @@ async function setupRoom(code: string, token: number, startup: StartupGuard) {
   controlsRoom = false; owner = false; following = true; connection = 'Connecting…';
   const attempt = new AbortController(); connectionAttempt = attempt;
   let hasConnected = false, receivedRoom = false, failed = false, connectionError = false;
+  let recoveryPhase: RoomRecoveryPhase | undefined;
   const positionError = (error: unknown) => { if (token === generation) reportError(error, 'publish shared position'); };
   app.innerHTML = `<main class="session"><header class="room-header"><button id="leave" class="icon-button" aria-label="Leave room">←</button><div class="room-identity"><span class="small-label">ROOM ${safe(code)}</span><strong id="role">Joining your group…</strong></div><span id="connection" class="connection" role="status">Connecting…</span><button id="share" class="icon-button" aria-label="Share room" title="Share room">${shareIcon}</button></header>${!cloudConfigured ? localServerConfigured ? '<div class="demo-bar">LOCAL DEVELOPMENT · Shared across browsers</div>' : '<div class="demo-bar">BROWSER-ONLY DEMO · Same-browser tabs only</div>' : ''}<div id="notice" class="notice room-notice" role="alert" hidden></div><div id="pdf" class="pdf-host" tabindex="0" aria-label="Songbook"></div><nav class="toolbar" aria-label="Songbook controls"></nav></main><dialog id="share-dialog"><form method="dialog"><button class="dialog-close icon-button" aria-label="Close">×</button></form><p class="eyebrow">INVITE YOUR GROUP</p><h2>Room ${safe(code)}</h2><canvas id="qr"></canvas><p id="share-url"></p><div class="share-actions"><button id="native-share" class="icon-button" aria-label="Share room link" title="Share room link">${shareIcon}</button><button id="copy" class="icon-button" aria-label="Copy room link" title="Copy room link">${copyIcon}</button></div><p id="copy-status" role="status"></p></dialog>`;
   $('#leave').onclick = () => { history.pushState({}, '', '/'); home(); };
@@ -324,7 +326,7 @@ async function setupRoom(code: string, token: number, startup: StartupGuard) {
   function unavailable(title: string, explanation: string, error: unknown = operationError('room/unavailable', explanation), stage = 'room lookup') {
     if (token !== generation) return;
     try {
-      failed = true; progress.stop();
+      failed = true; recoveryPhase = undefined; progress.stop();
       ready = false; controlsRoom = false; viewer?.cancelFollow();
       interruptPinch();
       viewer?.cancelLoad?.();
@@ -359,7 +361,7 @@ async function setupRoom(code: string, token: number, startup: StartupGuard) {
       return;
     }
     if ((next.position.sequence || 0) < lastSequence) return;
-    receivedRoom = true; failed = false; updateConnectionProgress();
+    receivedRoom = true; failed = false; recoveryPhase = undefined; updateConnectionProgress();
     if (!ready && !loadingSource) startup.enter('room data received', 35000);
     const first = !room; const previous = room?.position; room = next; const wasControl = controlsRoom; owner = service.isMaster(next); controlsRoom = service.canControl();
     if (wasControl !== controlsRoom) {
@@ -416,15 +418,25 @@ async function setupRoom(code: string, token: number, startup: StartupGuard) {
   }
   function updateConnectionProgress() {
     const done = receivedRoom && connection === 'Connected';
+    if (recoveryPhase && !done) {
+      progress.connection(recoveryPhase, recoveryPhase === 'authentication refresh' ? 'Refreshing room access…' : 'Retrying room connection…');
+      return;
+    }
     progress.connection(receivedRoom ? 'room connection' : 'room lookup', done ? 'Connected' : connection === 'Offline' ? 'Offline. Waiting for room connection…' : hasConnected && receivedRoom ? 'Reconnecting to room…' : 'Connecting to room…', done);
   }
   let stage = 'initialization';
   try {
     startup.enter('connection initialization', 35000);
-    await service.init(phase => { if (token !== generation) return; stage = phase; startup.enter(phase, phase === 'clock' ? 20000 : 35000); progress.connection(phase, phase === 'authentication' ? 'Connecting securely…' : 'Checking server connection…'); }, attempt.signal);
+    await service.init(phase => {
+      if (token !== generation) return; stage = phase; startup.enter(phase, phase === 'clock' || phase === 'token' ? 20000 : 35000);
+      progress.connection(phase, phase === 'authentication' ? 'Connecting securely…' : phase === 'token' ? 'Checking room access…' : 'Checking server connection…');
+    }, attempt.signal);
     if (token !== generation) return; stage = 'room subscription'; startup.enter(stage, 35000); updateConnectionProgress();
     service.watch(code, next => { void receive(next).catch(error => startup.protect(() => unavailable('Could not update the room', errorText(error), error, 'room update'))); },
-      value => startup.protect(() => status(value)), error => startup.protect(() => unavailable('Could not join the room', errorText(error), error, stage)));
+      value => startup.protect(() => status(value)), error => startup.protect(() => unavailable('Could not join the room', errorText(error), error, stage)), phase => {
+        if (token !== generation) return;
+        stage = phase; recoveryPhase = phase; startup.enter(phase, phase === 'authentication refresh' ? 20000 : 35000); updateConnectionProgress();
+      });
   }
   catch (error) { unavailable('Could not join the room', errorText(error), error, stage); }
 }
