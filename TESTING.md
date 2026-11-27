@@ -293,7 +293,7 @@ The room 664212 report shows PERMISSION_DENIED before any room snapshot, and the
 
 Automated tests simulate SDK behavior, identity loss, token timeouts, cancellation and denial. They do not establish that native WebKit reproduces or resolves the original intermittent race; production rules and identity permissions remain unchanged.
 
-Local verification (2026-11-27, `fix/room-auth-recovery`): type checking, all 235 tests across 56 files, all seven isolated integration/PDF checks and the ordinary build passed. The existing main-bundle size warning remains. The new fix is local and has not been committed, pushed or deployed. The previously deployed startup-diagnostics code is now on main through PR #35; this does not imply that recovery is live.
+Local verification (2026-11-27, `fix/room-auth-recovery`): type checking, all 235 tests across 56 files, all seven isolated integration/PDF checks and the ordinary build passed. The existing main-bundle size warning remains. Implementation `babce4b` was committed and pushed on `fix/room-auth-recovery`, then deployed to Firebase Hosting on 2026-11-27. The guarded deployment build passed; live HTML and every JavaScript/CSS/worker asset matched deployment output byte-for-byte, including recovery progress and failure markers. No Database rules were changed or deployed. No PR was opened and the fix remains unmerged; physical iPhone recovery acceptance is still pending.
 
 ## Control dialog approval-first layout
 
