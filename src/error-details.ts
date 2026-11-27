@@ -1,5 +1,6 @@
 import { copyText } from './clipboard';
-export interface ErrorContext { stage: string; room?: string; backend?: string; page?: number }
+export interface StartupTraceEntry { stage: string; at: number; elapsedMs: number }
+export interface ErrorContext { stage: string; room?: string; backend?: string; page?: number; startup?: readonly StartupTraceEntry[] }
 export function redactErrorText(value: string) {
   return value.replace(/https?:\/\/[^\s<>"']+/gi, raw => {
     try { const url = new URL(raw); return `${url.origin}${url.pathname}${url.search || url.hash ? '?[redacted]' : ''}`; } catch { return '[URL redacted]'; }
@@ -12,6 +13,10 @@ export function formatErrorDetails(error: unknown, context: ErrorContext) {
   if (context.backend) lines.push(`Backend: ${context.backend}`);
   if (context.page) lines.push(`Page: ${context.page}`);
   lines.push(`Network: ${navigator.onLine ? 'online' : 'offline'}`, `Browser: ${navigator.userAgent}`);
+  if (context.startup?.length) {
+    lines.push('Startup trace:');
+    for (const entry of context.startup.slice(-40)) lines.push(`+${entry.elapsedMs}ms ${entry.stage}`);
+  }
   const seen = new Set<unknown>(); let current = error;
   for (let depth = 0; current != null && depth < 3 && !seen.has(current); depth++) {
     seen.add(current); const value = current as { name?: unknown; message?: unknown; code?: unknown; status?: unknown; stack?: unknown; cause?: unknown };

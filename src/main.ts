@@ -22,8 +22,10 @@ import { showSheetDialog } from './sheet-dialog';
 import { RoomLoading } from './room-loading';
 import { createErrorDetails, redactErrorText } from './error-details';
 import { operationError } from './operation-timeout';
+import { beginStartup, startupStage, type StartupGuard } from './startup';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
+startupStage('participant identity setup');
 const service = new RoomService();
 let viewer: SongbookViewer | undefined;
 let scrollbar: PdfScrollbar | undefined;
@@ -49,6 +51,7 @@ const safe = (value: string) => value.replace(/[&<>"']/g, ch => ({ '&': '&amp;',
 let noticeTimer: number | undefined;
 let loading: RoomLoading | undefined;
 let connectionAttempt: AbortController | undefined;
+let roomStartup: StartupGuard | undefined;
 const message = (value: string, duration = 0) => {
   window.clearTimeout(noticeTimer); noticeTimer = undefined;
   const element = app.querySelector<HTMLElement>('#notice');
@@ -62,9 +65,26 @@ const backend = () => cloudConfigured ? 'Firebase' : localServerConfigured ? 'Lo
 function reportError(error: unknown, stage = 'room operation') {
   message(''); let element = app.querySelector<HTMLElement>('#notice'); if (!element) return;
   if (element.tagName === 'P') { const replacement = document.createElement('div'); replacement.id = element.id; replacement.className = element.className; replacement.setAttribute('role', 'alert'); element.replaceWith(replacement); element = replacement; }
-  element.hidden = false; element.append(createErrorDetails(error, { stage, room: service.roomCode() || undefined, backend: backend() }));
+  element.hidden = false; element.append(createErrorDetails(error, { ...roomStartup?.context(stage), stage, room: service.roomCode() || undefined, backend: backend() }));
 }
-function cleanup() { generation++; connectionAttempt?.abort(); connectionAttempt = undefined; loading?.destroy(); loading = undefined; closeControl?.(); closeControl = undefined; refreshRequests = undefined; window.clearTimeout(noticeTimer); noticeTimer = undefined; closeMenu?.(); closeMenu = undefined; closeSheet?.(); closeSheet = undefined; closeSettings?.(); closeSettings = undefined; followerSync?.destroy(); followerSync = undefined; publisher?.stop(); publisher = undefined; scrollbarToggle?.destroy(); scrollbarToggle = undefined; scrollbar?.destroy(); scrollbar = undefined; viewer?.destroy(); viewer = undefined; service.leave(); room = undefined; ready = false; lastSequence = -1; lastPublished = ''; }
+function cleanup() {
+  generation++;
+  const dispose = (action: () => void) => { try { action(); } catch { /* Keep recovery usable if a partial component cannot clean up. */ } };
+  dispose(() => roomStartup?.dispose()); roomStartup = undefined;
+  dispose(() => connectionAttempt?.abort()); connectionAttempt = undefined;
+  dispose(() => loading?.destroy()); loading = undefined;
+  dispose(() => closeControl?.()); closeControl = undefined; refreshRequests = undefined;
+  window.clearTimeout(noticeTimer); noticeTimer = undefined;
+  dispose(() => closeMenu?.()); closeMenu = undefined;
+  dispose(() => closeSheet?.()); closeSheet = undefined;
+  dispose(() => closeSettings?.()); closeSettings = undefined;
+  dispose(() => followerSync?.destroy()); followerSync = undefined;
+  dispose(() => publisher?.stop()); publisher = undefined;
+  dispose(() => scrollbarToggle?.destroy()); scrollbarToggle = undefined;
+  dispose(() => scrollbar?.destroy()); scrollbar = undefined;
+  dispose(() => viewer?.destroy()); viewer = undefined;
+  dispose(() => service.leave()); room = undefined; ready = false; lastSequence = -1; lastPublished = '';
+}
 
 function home() {
   cleanup();
@@ -91,7 +111,17 @@ function home() {
 }
 
 async function openRoom(code: string) {
-  cleanup(); const token = generation; controlsRoom = false; owner = false; following = true; connection = 'Connecting…';
+  const startup = beginStartup(app, { room: code, backend: backend(), retry: () => void openRoom(code),
+    home: () => { history.pushState({}, '', '/'); route(); }, cancel: cleanup });
+  const token = generation + 1;
+  try {
+    startup.enter('previous room cleanup'); cleanup(); roomStartup = startup;
+    startup.enter('room interface setup'); await setupRoom(code, token, startup);
+  } catch (error) { if (token === generation) startup.fail(error); }
+}
+
+async function setupRoom(code: string, token: number, startup: StartupGuard) {
+  controlsRoom = false; owner = false; following = true; connection = 'Connecting…';
   const attempt = new AbortController(); connectionAttempt = attempt;
   let hasConnected = false, receivedRoom = false, failed = false, connectionError = false;
   const positionError = (error: unknown) => { if (token === generation) reportError(error, 'publish shared position'); };
@@ -141,14 +171,19 @@ async function openRoom(code: string) {
   $('#pdf').before(pdfFrame); pdfFrame.append($('#pdf'));
   $('#connection').textContent = 'Connecting…';
   const progress = new RoomLoading((error, stage) => {
-    if (token !== generation) return;
-    if (ready && room) { progress.stop(); connectionError = true; reportError(error, stage); }
-    else unavailable(stage === 'document loading' ? 'Could not open the songbook' : 'Could not join the room', error.message, error, stage);
+    startup.protect(() => {
+      if (token !== generation) return;
+      if (ready && room) { progress.stop(); connectionError = true; reportError(error, stage); startup.pause(); }
+      else unavailable(stage === 'document loading' ? 'Could not open the songbook' : 'Could not join the room', error.message, error, stage);
+    });
   });
   loading = progress; pdfFrame.before(progress.element); progress.connection('initialization', 'Connecting to room…');
+  startup.enter('scrollbar setup');
   scrollbar = new PdfScrollbar($('#pdf')); pdfFrame.append(scrollbar.element);
   scrollbarToggle = createVerticalScrollbarToggle(scrollbar);
+  startup.enter('viewer setup');
   viewer = new SongbookViewer($('#pdf'));
+  startup.enter('room controls setup');
   viewer.onLinkError = error => reportError(error, 'PDF link navigation');
   const syncControl = document.createElement('label'); syncControl.className = 'sync-control'; syncControl.hidden = true;
   const syncCheckbox = document.createElement('input'); syncCheckbox.type = 'checkbox'; syncCheckbox.checked = true;
@@ -288,26 +323,29 @@ async function openRoom(code: string) {
   pdfFrame.before(recovery);
   function unavailable(title: string, explanation: string, error: unknown = operationError('room/unavailable', explanation), stage = 'room lookup') {
     if (token !== generation) return;
-    failed = true; progress.stop();
-    ready = false; controlsRoom = false; viewer?.cancelFollow();
-    interruptPinch();
-    viewer?.cancelLoad?.();
-    sourceRevision++; loadingSource = ''; loadedSource = '';
-    publisher?.stop(); publisher = undefined;
-    scrollbarToggle?.update(false, false);
-    orientation.hidden = true;
-    dismissMenu();
-    $('#role').textContent = 'Room unavailable';
-    sync.reset(true);
-    pdfFrame.hidden = true;
-    $('.toolbar').hidden = true;
-    $<HTMLButtonElement>('#share').disabled = true;
-    message('');
-    recovery.innerHTML = `<h1>${safe(title)}</h1><p>${safe(redactErrorText(explanation))}</p><div class="recovery-actions"><button class="primary" id="retry-room">Try again</button><button class="secondary" id="back-home">Back to home</button></div>`;
-    recovery.querySelector('.recovery-actions')!.before(createErrorDetails(error, { stage, room: code, backend: backend() }));
-    recovery.hidden = false;
-    $('#retry-room').onclick = () => void openRoom(code);
-    $('#back-home').onclick = () => { history.pushState({}, '', '/'); home(); };
+    try {
+      failed = true; progress.stop();
+      ready = false; controlsRoom = false; viewer?.cancelFollow();
+      interruptPinch();
+      viewer?.cancelLoad?.();
+      sourceRevision++; loadingSource = ''; loadedSource = '';
+      publisher?.stop(); publisher = undefined;
+      scrollbarToggle?.update(false, false);
+      orientation.hidden = true;
+      dismissMenu();
+      $('#role').textContent = 'Room unavailable';
+      sync.reset(true);
+      pdfFrame.hidden = true;
+      $('.toolbar').hidden = true;
+      $<HTMLButtonElement>('#share').disabled = true;
+      message('');
+      recovery.innerHTML = `<h1>${safe(title)}</h1><p>${safe(redactErrorText(explanation))}</p><div class="recovery-actions"><button class="primary" id="retry-room">Try again</button><button class="secondary" id="back-home">Back to home</button></div>`;
+      recovery.querySelector('.recovery-actions')!.before(createErrorDetails(error, startup.context(stage)));
+      recovery.hidden = false;
+      $('#retry-room').onclick = () => void openRoom(code);
+      $('#back-home').onclick = () => { history.pushState({}, '', '/'); home(); };
+      startup.pause();
+    } catch { startup.fail(error); }
   }
   async function receive(next: Room | null) {
     if (token !== generation) return;
@@ -322,6 +360,7 @@ async function openRoom(code: string) {
     }
     if ((next.position.sequence || 0) < lastSequence) return;
     receivedRoom = true; failed = false; updateConnectionProgress();
+    if (!ready && !loadingSource) startup.enter('room data received', 35000);
     const first = !room; const previous = room?.position; room = next; const wasControl = controlsRoom; owner = service.isMaster(next); controlsRoom = service.canControl();
     if (wasControl !== controlsRoom) {
       interruptPinch();
@@ -339,14 +378,18 @@ async function openRoom(code: string) {
       recovery.hidden = true; pdfFrame.hidden = false; $('.toolbar').hidden = false;
       $<HTMLButtonElement>('#share').disabled = false;
       progress.startDocument(Boolean(next.sheet && !isPdfFile(next.sheet)));
+      startup.enter('document loading', 50000);
       try {
-        if (next.sheet && !isPdfFile(next.sheet)) await viewer!.loadSheet(next.sheet); else await viewer!.load(next.sheet && isPdfFile(next.sheet) ? next.sheet.pdfUrl : next.pdfUrl, value => { if (token === generation && revision === sourceRevision) progress.progress(value); });
+        if (next.sheet && !isPdfFile(next.sheet)) await viewer!.loadSheet(next.sheet); else await viewer!.load(next.sheet && isPdfFile(next.sheet) ? next.sheet.pdfUrl : next.pdfUrl, value => {
+          if (token === generation && revision === sourceRevision) { progress.progress(value); startup.enter(value.stage === 'download' ? 'PDF download' : 'PDF page preparation', 50000); }
+        });
         if (token !== generation || revision !== sourceRevision) return;
         loadedSource = source; loadingSource = '';
         progress.documentDone();
         publisher = new PositionPublisher(position => service.publish(position), positionError);
         ready = true;
         viewer!.follow(room!.position, true, true); updateFollow();
+        startup.complete();
       } catch (error) { if (token !== generation || revision !== sourceRevision) return; unavailable('Could not open the songbook', `${errorText(error)} Try again, or return home to join another room.`, error, 'document loading'); }
     } else if (ready && (wasControl !== controlsRoom || service.shouldFollow(next.position, following)) && ((next.position.sequence || 0) > lastSequence || wasControl !== controlsRoom)) {
       // Atomic source/destination switches omit writerId; honor those and legacy
@@ -368,6 +411,7 @@ async function openRoom(code: string) {
     if (reconnected && ready) {
       interruptPinch();
       if ((controlsRoom || following) && room) viewer?.follow(room.position, true, true);
+      startup.complete();
     }
   }
   function updateConnectionProgress() {
@@ -376,17 +420,24 @@ async function openRoom(code: string) {
   }
   let stage = 'initialization';
   try {
-    await service.init(phase => { if (token !== generation) return; stage = phase; progress.connection(phase, phase === 'authentication' ? 'Connecting securely…' : 'Checking server connection…'); }, attempt.signal);
-    if (token !== generation) return; stage = 'room subscription'; updateConnectionProgress();
-    service.watch(code, next => { void receive(next).catch(error => unavailable('Could not update the room', errorText(error), error, 'room update')); }, status, error => unavailable('Could not join the room', errorText(error), error, stage));
+    startup.enter('connection initialization', 35000);
+    await service.init(phase => { if (token !== generation) return; stage = phase; startup.enter(phase, phase === 'clock' ? 20000 : 35000); progress.connection(phase, phase === 'authentication' ? 'Connecting securely…' : 'Checking server connection…'); }, attempt.signal);
+    if (token !== generation) return; stage = 'room subscription'; startup.enter(stage, 35000); updateConnectionProgress();
+    service.watch(code, next => { void receive(next).catch(error => startup.protect(() => unavailable('Could not update the room', errorText(error), error, 'room update'))); },
+      value => startup.protect(() => status(value)), error => startup.protect(() => unavailable('Could not join the room', errorText(error), error, stage)));
   }
   catch (error) { unavailable('Could not join the room', errorText(error), error, stage); }
 }
 
 window.addEventListener('popstate', route);
 function route() {
-  const params = new URLSearchParams(location.search);
-  if (params.get('settings') === '1') { cleanup(); closeSettings = showSettings(app, () => { history.pushState({}, '', '/'); home(); }); return; }
-  const code = params.get('room'); if (code && validCode(code)) void openRoom(code); else home();
+  try {
+    const params = new URLSearchParams(location.search);
+    if (params.get('settings') === '1') { cleanup(); closeSettings = showSettings(app, () => { history.pushState({}, '', '/'); home(); }); return; }
+    const code = params.get('room'); if (code && validCode(code)) void openRoom(code); else home();
+  } catch (error) {
+    const startup = beginStartup(app, { retry: () => location.reload(), home: () => { location.href = '/'; }, cancel: cleanup });
+    startup.enter('navigation setup'); startup.fail(error);
+  }
 }
 route();
